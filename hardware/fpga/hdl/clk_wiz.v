@@ -1,3 +1,5 @@
+// TODO: make clock to match ESP + multiple phased clocks
+// NOTE: Kintex-7 MMCM allows you to change the phase of a clock while the chip is running by increments of about 18 ps
 module clk_wiz (
     input    sysclk_p,                  
     input    sysclk_n,                  
@@ -22,5 +24,4 @@ module clk_wiz (
       .O           (sysclk_200mhz_passthrough),
       .I           (sysclk_200mhz_inst)
   );
-
 endmodule
