@@ -97,9 +97,16 @@ Key log lines to watch:
 - `Throughput: X tokens/s` — inference speed
 
 ### Serving
-- Serving script needs to be created for GLM-4.7-Flash (TODO)
-- Models served as OpenAI-compatible endpoints via vLLM
-- To serve a trained checkpoint, set `CHECKPOINT` in the serve script to the subfolder name (e.g. `"glm4flash-redteam/step-50"`)
+```bash
+# Deploy (persistent endpoint with auto-scaling)
+.venv/bin/modal deploy deploy/serve_glm4flash.py
+
+# Dev mode (auto-reload on code changes)
+.venv/bin/modal serve deploy/serve_glm4flash.py
+```
+- OpenAI-compatible API via vLLM (`/v1/chat/completions`, `/v1/completions`)
+- 2x H100 with tensor parallelism, 32K context, tool calling via `hermes` parser
+- To serve a trained checkpoint, set `CHECKPOINT` in `serve_glm4flash.py` (e.g. `"glm4flash-redteam/step-50"`)
 - Four Modal Volumes: `re-zero-hf-cache` (HF downloads), `re-zero-vllm-cache` (vLLM cache), `re-zero-checkpoints` (trained weights), `re-zero-mlflow` (metrics)
 
 ### General
@@ -118,7 +125,8 @@ training/
 ├── deploy/
 │   ├── common.py                       # shared image, volumes
 │   ├── train.py                        # unified training entry point
-│   └── train_glm4flash.py             # standalone GLM-4.7-Flash training (4x H100)
+│   ├── train_glm4flash.py             # standalone GLM-4.7-Flash training (4x H100)
+│   └── serve_glm4flash.py             # vLLM serving for GLM-4.7-Flash (2x H100)
 ├── CLAUDE.md
 ├── README.md
 └── pyproject.toml
