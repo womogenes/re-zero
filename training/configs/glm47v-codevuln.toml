@@ -1,0 +1,37 @@
+# GLM-4.7V x Code Vulnerability
+
+inference_gpu_ids = [0, 1, 2, 3]
+trainer_gpu_ids = [4, 5]
+
+max_steps = 200
+seq_len = 4096
+
+[model]
+name = "THUDM/GLM-4.7V"
+
+[mlflow]
+project = "re-zero"
+name = "glm47v-code-vulnerability"
+
+[ckpt]
+
+[trainer.optim]
+lr = 3e-6
+weight_decay = 0.0
+
+[orchestrator]
+batch_size = 256
+rollouts_per_example = 16
+
+[orchestrator.sampling]
+max_tokens = 512
+
+[[orchestrator.env]]
+id = "intertwine/sv-env-code-vulnerability"
+
+[inference.model]
+enable_auto_tool_choice = true
+tool_call_parser = "hermes"
+
+[inference.parallel]
+dp = 4

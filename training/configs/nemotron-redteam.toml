@@ -1,0 +1,41 @@
+# Nemotron 3 Nano x Red Team Attack
+
+inference_gpu_ids = [0]
+trainer_gpu_ids = [1]
+
+max_steps = 200
+seq_len = 4096
+
+[model]
+name = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
+
+[mlflow]
+project = "re-zero"
+name = "nemotron-nano-redteam-attack"
+
+[ckpt]
+
+[trainer.optim]
+lr = 1e-5
+weight_decay = 0.0
+
+[orchestrator]
+batch_size = 512
+rollouts_per_example = 16
+oversampling_factor = 2.0
+
+[orchestrator.sampling]
+max_tokens = 512
+
+[orchestrator.buffer]
+online_difficulty_filtering = true
+
+[[orchestrator.env]]
+id = "intertwine/sv-env-redteam-attack"
+
+[inference.model]
+enable_auto_tool_choice = true
+tool_call_parser = "hermes"
+
+[inference.parallel]
+dp = 1

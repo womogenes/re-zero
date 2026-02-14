@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.modal/
+*.safetensors
+*.bin
+*.gguf
+checkpoints/
+.env
+*.key
+.DS_Store
+wandb/
