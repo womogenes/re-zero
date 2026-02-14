@@ -61,8 +61,8 @@ set_property -dict { PACKAGE_PIN P27  IOSTANDARD LVCMOS33 } [get_ports { sw[7] }
 
 # https://digilent.com/reference/programmable-logic/genesys-2/reference-manual
 # PMOD differential pairs
-set_property -dict { PACKAGE_PIN U27  IOSTANDARD LVCMOS33 } [get_ports { esp_sig_p }];  # JA1_P
-set_property -dict { PACKAGE_PIN U28  IOSTANDARD LVCMOS33 } [get_ports { esp_sig_n }];  # JA1_N
+set_property -dict { PACKAGE_PIN U27  IOSTANDARD LVDS_25 } [get_ports { esp_sig_p }];  # JA1_P
+set_property -dict { PACKAGE_PIN U28  IOSTANDARD LVDS_25 } [get_ports { esp_sig_n }];  # JA1_N
 
 # PMOD A Signals (this project top-level currently has no `pmoda[]` ports)
 # set_property -dict {PACKAGE_PIN F14 IOSTANDARD LVCMOS33}  [ get_ports {pmoda[0]} ]
