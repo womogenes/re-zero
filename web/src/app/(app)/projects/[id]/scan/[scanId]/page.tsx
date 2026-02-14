@@ -4,7 +4,6 @@ import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../../../convex/_generated/api";
 import { Id } from "../../../../../../../convex/_generated/dataModel";
-import { Badge } from "@/components/ui/badge";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -16,70 +15,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useEffect, useRef, useState } from "react";
-import {
-  ChevronRight,
-  FileText,
-  Search,
-  Brain,
-  Eye,
-  Send,
-  ArrowDown,
-  Shield,
-  AlertTriangle,
-  Info,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-
-// --- Severity config ---
-const SEVERITY_CONFIG: Record<
-  string,
-  { color: string; bg: string; border: string; icon: typeof Shield }
-> = {
-  critical: {
-    color: "text-red-500 dark:text-red-400",
-    bg: "bg-red-500/10",
-    border: "border-red-500/20",
-    icon: AlertTriangle,
-  },
-  high: {
-    color: "text-orange-600 dark:text-orange-400",
-    bg: "bg-orange-500/10",
-    border: "border-orange-500/20",
-    icon: AlertTriangle,
-  },
-  medium: {
-    color: "text-yellow-600 dark:text-yellow-400",
-    bg: "bg-yellow-500/10",
-    border: "border-yellow-500/20",
-    icon: Shield,
-  },
-  low: {
-    color: "text-blue-600 dark:text-blue-400",
-    bg: "bg-blue-500/10",
-    border: "border-blue-500/20",
-    icon: Info,
-  },
-  info: {
-    color: "text-zinc-500 dark:text-zinc-400",
-    bg: "bg-zinc-500/5",
-    border: "border-zinc-500/20",
-    icon: Info,
-  },
-};
-
-const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
-  queued: { color: "text-yellow-600 dark:text-yellow-400", label: "queued" },
-  running: { color: "text-blue-600 dark:text-blue-400", label: "running" },
-  completed: { color: "text-emerald-600 dark:text-emerald-400", label: "completed" },
-  failed: { color: "text-red-600 dark:text-red-400", label: "failed" },
-};
 
 // --- JSON display ---
 function JsonBlock({ data }: { data: unknown }) {
   if (data === null || data === undefined) return null;
   const formatted = typeof data === "string" ? data : JSON.stringify(data, null, 2);
   return (
-    <pre className="text-xs font-mono bg-muted/50 border border-border rounded px-3 py-2 whitespace-pre-wrap overflow-x-auto text-foreground/70 leading-relaxed">
+    <pre className="text-xs bg-muted/60 border border-border px-3 py-2 whitespace-pre-wrap overflow-x-auto text-foreground/60 leading-relaxed">
       {formatted}
     </pre>
   );
@@ -109,68 +51,62 @@ function ActionItem({
     hour12: false,
   });
 
+  // Reasoning: the agent's inner monologue
   if (action.type === "reasoning") {
     return (
-      <div className="px-4 py-3 border-l-2 border-purple-500/50 bg-purple-500/5 rounded-r mx-2 my-1">
-        <div className="flex items-start gap-2.5">
-          <Brain className="h-4 w-4 text-purple-500 dark:text-purple-400 mt-0.5 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
-              {typeof payload === "string" ? payload : JSON.stringify(payload)}
-            </p>
-            <span className="text-xs text-muted-foreground mt-1.5 block font-mono">
-              {time}
-            </span>
-          </div>
+      <div className="px-5 py-3 my-1">
+        <div className="border-l-2 border-foreground/15 pl-4">
+          <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">
+            {typeof payload === "string" ? payload : JSON.stringify(payload)}
+          </p>
+          <span className="text-xs text-muted-foreground mt-2 block tabular-nums">
+            {time}
+          </span>
         </div>
       </div>
     );
   }
 
+  // Observation: system messages
   if (action.type === "observation") {
     return (
-      <div className="px-4 py-2 flex items-center gap-2.5 mx-2">
-        <Eye className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <div className="px-5 py-1.5 flex items-center gap-3">
         <span className="text-sm text-muted-foreground">
           {typeof payload === "string" ? payload : JSON.stringify(payload)}
         </span>
-        <span className="text-xs text-muted-foreground/60 ml-auto shrink-0 font-mono">
+        <span className="text-xs text-muted-foreground/50 ml-auto shrink-0 tabular-nums">
           {time}
         </span>
       </div>
     );
   }
 
+  // Tool call: expandable with input details
   if (action.type === "tool_call") {
     const tool = isObject ? String((payload as Record<string, unknown>).tool) : "?";
     const summary = isObject ? (payload as Record<string, unknown>).summary : null;
     const input = isObject ? (payload as Record<string, unknown>).input : null;
-    const ToolIcon = tool === "read_file" ? FileText : tool === "search_code" ? Search : Send;
 
     return (
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger asChild>
-          <button className="w-full text-left px-4 py-2 flex items-center gap-2.5 hover:bg-accent/50 rounded mx-2 transition-colors cursor-pointer">
-            <ChevronRight
-              className={`h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0 ${expanded ? "rotate-90" : ""}`}
-            />
-            <ToolIcon className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-            <Badge
-              variant="outline"
-              className="text-xs px-2 py-0.5 font-mono border-blue-500/30 text-blue-700 dark:text-blue-300"
-            >
+          <button className="w-full text-left px-5 py-2 flex items-center gap-3 hover:bg-accent/40 transition-colors duration-100 cursor-pointer">
+            <span className="text-xs text-muted-foreground/60 shrink-0 w-3 tabular-nums">
+              {expanded ? "\u2212" : "+"}
+            </span>
+            <span className="text-xs text-muted-foreground border border-border px-1.5 py-px shrink-0">
               {tool}
-            </Badge>
-            <span className="text-sm text-foreground/80 truncate flex-1">
+            </span>
+            <span className="text-sm text-foreground/70 truncate flex-1">
               {summary ? String(summary) : ""}
             </span>
-            <span className="text-xs text-muted-foreground/60 shrink-0 font-mono">
+            <span className="text-xs text-muted-foreground/50 shrink-0 tabular-nums">
               {time}
             </span>
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="ml-14 mr-4 mb-2">
+          <div className="ml-12 mr-5 mb-3">
             {input != null && <JsonBlock data={input} />}
           </div>
         </CollapsibleContent>
@@ -178,37 +114,34 @@ function ActionItem({
     );
   }
 
+  // Tool result: compact inline
   if (action.type === "tool_result") {
-    const tool = isObject ? String((payload as Record<string, unknown>).tool) : "?";
     const summary = isObject ? (payload as Record<string, unknown>).summary : null;
-    const ToolIcon = tool === "read_file" ? FileText : tool === "search_code" ? Search : Send;
 
     return (
-      <div className="px-4 py-1.5 flex items-center gap-2.5 mx-2">
-        <div className="w-3.5" /> {/* spacer to align with tool_call chevron */}
-        <ToolIcon className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
-        <span className="text-sm text-muted-foreground">
+      <div className="px-5 py-1 flex items-center gap-3">
+        <span className="w-3" />
+        <span className="text-sm text-muted-foreground/60 truncate">
           {summary
             ? String(summary)
             : typeof payload === "string"
               ? payload
               : JSON.stringify(payload)}
         </span>
-        <span className="text-xs text-muted-foreground/60 ml-auto shrink-0 font-mono">
+        <span className="text-xs text-muted-foreground/40 ml-auto shrink-0 tabular-nums">
           {time}
         </span>
       </div>
     );
   }
 
-  // Fallback for report type or unknown
+  // Fallback
   return (
-    <div className="px-4 py-2 flex items-center gap-2.5 mx-2">
-      <Send className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-      <span className="text-sm text-foreground/80">
+    <div className="px-5 py-2 flex items-center gap-3">
+      <span className="text-sm text-foreground/70">
         {typeof payload === "string" ? payload : JSON.stringify(payload)}
       </span>
-      <span className="text-xs text-muted-foreground/60 ml-auto shrink-0 font-mono">
+      <span className="text-xs text-muted-foreground/50 ml-auto shrink-0 tabular-nums">
         {time}
       </span>
     </div>
@@ -240,77 +173,83 @@ function ReportPanel({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-border shrink-0">
-        <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-border shrink-0">
+        <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-semibold">Report</h2>
-          <span className="text-xs text-muted-foreground font-mono">
-            {report.findings.length} findings
-          </span>
-        </div>
-
-        {/* Severity bar */}
-        <div className="flex gap-2 mt-2 flex-wrap">
-          {(["critical", "high", "medium", "low", "info"] as const).map((sev) => {
-            const count = severityCounts[sev] || 0;
-            if (count === 0) return null;
-            const cfg = SEVERITY_CONFIG[sev];
-            return (
-              <span
-                key={sev}
-                className={`text-xs font-mono px-2 py-0.5 rounded ${cfg.bg} ${cfg.color} ${cfg.border} border`}
-              >
-                {count} {sev}
-              </span>
-            );
-          })}
+          <div className="flex items-baseline gap-4 text-xs text-muted-foreground">
+            <span>{report.findings.length} findings</span>
+            {(["critical", "high", "medium", "low", "info"] as const).map((sev) => {
+              const count = severityCounts[sev] || 0;
+              if (count === 0) return null;
+              return (
+                <span
+                  key={sev}
+                  className={
+                    sev === "critical" || sev === "high"
+                      ? "text-destructive"
+                      : ""
+                  }
+                >
+                  {count} {sev}
+                </span>
+              );
+            })}
+          </div>
         </div>
       </div>
 
+      {/* Content — reads like a document */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-3">
+        <div className="px-6 py-5">
           {report.summary && (
-            <p className="text-sm text-muted-foreground leading-relaxed pb-3 border-b border-border">
+            <p className="text-sm text-muted-foreground leading-relaxed mb-6 pb-6 border-b border-border">
               {report.summary}
             </p>
           )}
 
-          {report.findings.map((finding, i) => {
-            const cfg = SEVERITY_CONFIG[finding.severity] || SEVERITY_CONFIG.info;
-            const SevIcon = cfg.icon;
-            return (
-              <div
-                key={i}
-                className={`rounded-lg border ${cfg.border} ${cfg.bg} p-4 space-y-2`}
-              >
-                <div className="flex items-start gap-2.5">
-                  <SevIcon className={`h-4 w-4 mt-0.5 shrink-0 ${cfg.color}`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {finding.title}
-                      </span>
-                      <span className={`text-xs font-mono shrink-0 ${cfg.color}`}>
-                        {finding.severity}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                      {finding.description}
-                    </p>
-                    {finding.location && (
-                      <p className="text-xs font-mono text-muted-foreground mt-2 bg-muted px-2 py-1 rounded inline-block">
-                        {finding.location}
-                      </p>
-                    )}
-                    {finding.recommendation && (
-                      <p className="text-sm text-muted-foreground mt-2 pl-3 border-l-2 border-border">
-                        {finding.recommendation}
-                      </p>
-                    )}
-                  </div>
-                </div>
+          {report.findings.map((finding, i) => (
+            <div
+              key={i}
+              className="py-5 border-b border-border last:border-b-0"
+            >
+              {/* Severity + location metadata */}
+              <div className="flex items-baseline gap-3 mb-2">
+                <span
+                  className={`text-xs font-medium ${
+                    finding.severity === "critical" || finding.severity === "high"
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {finding.severity}
+                </span>
+                {finding.location && (
+                  <>
+                    <span className="text-xs text-muted-foreground/40">&middot;</span>
+                    <span className="text-xs text-muted-foreground">
+                      {finding.location}
+                    </span>
+                  </>
+                )}
               </div>
-            );
-          })}
+
+              {/* Title */}
+              <div className="text-sm font-medium mb-2">{finding.title}</div>
+
+              {/* Description */}
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {finding.description}
+              </p>
+
+              {/* Recommendation */}
+              {finding.recommendation && (
+                <p className="text-sm text-muted-foreground mt-3 border-l-2 border-destructive/30 pl-3">
+                  {finding.recommendation}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -358,9 +297,9 @@ function TracePanel({
 
   return (
     <div className="h-full flex flex-col relative">
-      <div className="px-4 py-3 border-b border-border shrink-0 flex items-center justify-between">
+      <div className="px-6 py-4 border-b border-border shrink-0 flex items-baseline justify-between">
         <h2 className="text-sm font-semibold">Trace</h2>
-        <span className="text-xs text-muted-foreground font-mono">
+        <span className="text-xs text-muted-foreground">
           {actions?.length ?? 0} actions
         </span>
       </div>
@@ -370,9 +309,9 @@ function TracePanel({
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto"
       >
-        <div className="py-2 space-y-0.5">
+        <div className="py-2">
           {(!actions || actions.length === 0) && (
-            <div className="flex items-center justify-center py-16">
+            <div className="flex items-center justify-center py-20">
               <p className="text-sm text-muted-foreground">
                 Waiting for agent...
               </p>
@@ -384,11 +323,8 @@ function TracePanel({
           ))}
 
           {isRunning && actions && actions.length > 0 && (
-            <div className="flex items-center gap-2.5 px-4 py-3 mx-2 text-sm text-muted-foreground">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-              </span>
+            <div className="flex items-center gap-2.5 px-5 py-4 text-sm text-muted-foreground">
+              <span className="inline-block w-1.5 h-1.5 bg-destructive/70 animate-pulse" />
               Agent is working...
             </div>
           )}
@@ -396,17 +332,15 @@ function TracePanel({
       </div>
 
       {showScrollButton && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="absolute bottom-3 right-3 h-8 w-8 p-0 rounded-full"
+        <button
+          className="absolute bottom-4 right-4 text-xs border border-border bg-background px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors duration-100"
           onClick={() => {
             setAutoScroll(true);
             scrollToBottom();
           }}
         >
-          <ArrowDown className="h-3.5 w-3.5" />
-        </Button>
+          scroll to bottom
+        </button>
       )}
     </div>
   );
@@ -428,45 +362,42 @@ export default function ScanPage() {
   if (!scan) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
-        <p className="text-sm text-muted-foreground font-mono">
-          Loading scan...
-        </p>
+        <p className="text-sm text-muted-foreground">loading...</p>
       </div>
     );
   }
 
-  const statusCfg = STATUS_CONFIG[scan.status] || STATUS_CONFIG.queued;
   const isRunning = scan.status === "running" || scan.status === "queued";
   const hasReport = !!report;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4.5rem)]">
-      {/* Header */}
-      <div className="flex items-center gap-3 pb-3 shrink-0">
-        <h1 className="text-base font-semibold tracking-tight">Scan</h1>
-        <Badge variant="outline" className="text-xs px-2 py-0.5 font-mono">
-          {scan.agent}
-        </Badge>
-        <span className={`text-xs font-mono flex items-center gap-1.5 ${statusCfg.color}`}>
+    <div className="flex flex-col h-[calc(100vh-3.25rem)]">
+      {/* Scan header — full width, tight */}
+      <div className="flex items-center gap-5 px-8 py-3 border-b border-border shrink-0">
+        <h1 className="text-sm font-semibold">Scan</h1>
+        <span className="text-xs text-muted-foreground">{scan.agent}</span>
+        <span className="text-xs flex items-center gap-2">
           {isRunning && (
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            <span className="inline-block w-1.5 h-1.5 bg-destructive/70 animate-pulse" />
           )}
-          {statusCfg.label}
+          <span className={isRunning ? "text-destructive" : "text-muted-foreground"}>
+            {scan.status}
+          </span>
         </span>
-        <span className="text-xs text-muted-foreground font-mono ml-auto">
+        <span className="text-xs text-muted-foreground ml-auto tabular-nums">
           {new Date(scan.startedAt).toLocaleString()}
         </span>
       </div>
 
-      {/* Content — both panels scroll independently */}
-      <div className="flex-1 min-h-0 border border-border rounded-lg overflow-hidden">
+      {/* Content — full viewport width, no max-w constraint */}
+      <div className="flex-1 min-h-0">
         {hasReport ? (
           <ResizablePanelGroup orientation="horizontal">
-            <ResizablePanel defaultSize={45} minSize={20}>
+            <ResizablePanel defaultSize={42} minSize={20}>
               <TracePanel actions={actions} isRunning={isRunning} />
             </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={55} minSize={25}>
+            <ResizableHandle />
+            <ResizablePanel defaultSize={58} minSize={25}>
               <ReportPanel report={report} />
             </ResizablePanel>
           </ResizablePanelGroup>

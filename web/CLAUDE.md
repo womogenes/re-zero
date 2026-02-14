@@ -56,12 +56,42 @@ web/
 - **Real-time actions**: Scan page subscribes to `actions.listByScan` — Convex pushes updates automatically
 - **Target types**: oss, web, hardware, fpga — each has different targetConfig shape
 
-## UI/UX direction
-- Dark mode by default
-- High information density, monospace where it counts
-- Custom theme — NOT generic shadcn. Personality matters (Re:Zero anime references welcome).
-- Reference: usgraphics.com aesthetic
-- Removing > adding. Every element should be intentional.
+## Brand & design system
+
+**Concept**: Re:Zero = "Return from zero." Named after the anime where the protagonist iterates through death, accumulating knowledge. For security: agents probe, fail, learn, return. Each scan is a "life."
+
+**Palette**: Warm monochrome + one accent (muted red).
+- Base colors have subtle warmth — cream/sepia tones, not pure gray
+- Light: #f7f5f2 bg, #1a1815 text, #ddd9d3 borders
+- Dark: #0e0d0c bg, #e8e4de text, #2a2826 borders
+- Red accent (#b5392b light / #c94a3a dark): ONLY for critical/high severity, running states, and the brand colon in "re:zero"
+- Everything else is foreground/muted-foreground — no other colors
+
+**Typography**: Geist Mono as body font. Hierarchy through weight + size, not color.
+- Page titles: text-base font-semibold
+- Section labels: text-xs text-muted-foreground
+- Body: text-sm
+- Metadata: text-xs tabular-nums
+
+**Shape**: 1px border radius everywhere. Sharp corners. No rounded anything.
+
+**Space**: Intentional vertical rhythm. Generous spacing between sections (mb-12), tight within (gap-3). Space IS the design.
+
+**Decoration rules**:
+- 2px red brand line at viewport top (body::before)
+- Left borders (border-l-2) for reasoning blocks and recommendations
+- Horizontal rules between sections
+- No gradients, no shadows, no glows, no icons (Lucide icons banned from app pages)
+- Subtle hover states: bg-accent/40, underline on names, translate-y-px on click
+
+**Layout**:
+- Scan page is full viewport width (no max-w constraint)
+- Other pages self-constrain (max-w-4xl or max-w-lg)
+- App layout provides only header + flex-1 main — pages handle their own padding
+
+**Microinteractions**: duration-100 for interactive (snappy), duration-150 for navigation (deliberate). active:translate-y-px for press feedback.
+
+**References**: usgraphics.com, ghostty.org, opencode.ai, bearblog, polar.sh/company
 
 ## Rules
 - Never use npm or yarn

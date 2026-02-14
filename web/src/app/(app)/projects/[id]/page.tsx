@@ -6,21 +6,12 @@ import { api } from "../../../../../convex/_generated/api";
 import { Id } from "../../../../../convex/_generated/dataModel";
 import Link from "next/link";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Play } from "lucide-react";
 
+const AGENTS = ["opus", "glm47v", "nemotron"] as const;
 const AGENT_LABELS: Record<string, string> = {
   opus: "Opus 4.6",
   glm47v: "GLM-4.7V",
   nemotron: "Nemotron",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  queued: "text-yellow-600 dark:text-yellow-400",
-  running: "text-blue-600 dark:text-blue-400",
-  completed: "text-emerald-600 dark:text-emerald-400",
-  failed: "text-red-600 dark:text-red-400",
 };
 
 export default function ProjectPage() {
@@ -40,7 +31,6 @@ export default function ProjectPage() {
 
     const scanId = await createScan({ projectId, agent });
 
-    // Trigger the server to spin up the sandbox
     try {
       await fetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/scans/start`, {
         method: "POST",
@@ -63,112 +53,192 @@ export default function ProjectPage() {
   if (!project) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
-        <p className="text-sm text-muted-foreground font-mono">Loading project...</p>
+        <p className="text-sm text-muted-foreground">loading...</p>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
-        <p className="text-sm text-muted-foreground font-mono mt-1">
-          {project.targetType} &middot; {new Date(project.createdAt).toLocaleDateString()}
-        </p>
-      </div>
+  // Aggregate findings from all reports
+  const allFindings = reports?.flatMap((r) => r.findings) ?? [];
+  const severityCounts = allFindings.reduce(
+    (acc, f) => {
+      acc[f.severity] = (acc[f.severity] || 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
 
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">Scans</h2>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleStartScan("opus")}
-              disabled={starting}
-            >
-              <Play className="h-3 w-3 mr-1" />
-              Opus 4.6
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleStartScan("glm47v")}
-              disabled={starting}
-            >
-              <Play className="h-3 w-3 mr-1" />
-              GLM-4.7V
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleStartScan("nemotron")}
-              disabled={starting}
-            >
-              <Play className="h-3 w-3 mr-1" />
-              Nemotron
-            </Button>
-          </div>
+  const runningScans = scans?.filter((s) => s.status === "running") ?? [];
+  const completedScans = scans?.filter((s) => s.status !== "running") ?? [];
+
+  return (
+    <div className="px-8 py-8 max-w-4xl mx-auto">
+      {/* Project header */}
+      <div className="mb-12">
+        <h1 className="text-base font-semibold">{project.name}</h1>
+        <div className="flex items-baseline gap-3 mt-2 text-sm text-muted-foreground">
+          <span>{project.targetType}</span>
+          <span>&middot;</span>
+          <span className="truncate max-w-sm">
+            {project.targetType === "oss" && project.targetConfig?.repoUrl}
+            {project.targetType === "web" && project.targetConfig?.url}
+            {project.targetType === "hardware" && project.targetConfig?.device}
+            {project.targetType === "fpga" && "fpga target"}
+          </span>
+          <span>&middot;</span>
+          <span className="tabular-nums">
+            {new Date(project.createdAt).toLocaleDateString()}
+          </span>
         </div>
 
-        {scans && scans.length === 0 && (
-          <p className="text-sm text-muted-foreground py-8 text-center">
-            No scans yet. Start one above.
-          </p>
-        )}
-
-        <div className="space-y-2">
-          {scans?.map((scan) => (
-            <Link
-              key={scan._id}
-              href={`/projects/${projectId}/scan/${scan._id}`}
-              className="flex items-center justify-between border border-border rounded-lg px-4 py-3 hover:bg-accent/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <span className={`text-xs font-mono ${STATUS_COLORS[scan.status]}`}>
-                  {scan.status}
+        {/* Findings summary — only if there are findings */}
+        {allFindings.length > 0 && (
+          <div className="flex items-baseline gap-4 mt-4 text-sm">
+            <span className="text-muted-foreground">{allFindings.length} findings</span>
+            {(["critical", "high", "medium", "low", "info"] as const).map((sev) => {
+              const count = severityCounts[sev] || 0;
+              if (count === 0) return null;
+              return (
+                <span
+                  key={sev}
+                  className={sev === "critical" || sev === "high" ? "text-destructive" : "text-muted-foreground"}
+                >
+                  {count} {sev}
                 </span>
-                <Badge variant="outline" className="text-xs font-mono">
-                  {AGENT_LABELS[scan.agent]}
-                </Badge>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {new Date(scan.startedAt).toLocaleString()}
-              </span>
-            </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Start new scan */}
+      <div className="mb-12">
+        <h2 className="text-xs text-muted-foreground mb-4">Scan with</h2>
+        <div className="flex gap-3">
+          {AGENTS.map((agent) => (
+            <button
+              key={agent}
+              onClick={() => handleStartScan(agent)}
+              disabled={starting}
+              className="text-sm border border-border px-4 py-2 hover:bg-accent hover:border-foreground/20 transition-colors duration-100 disabled:opacity-30 active:translate-y-px"
+            >
+              {AGENT_LABELS[agent]}
+            </button>
           ))}
         </div>
       </div>
 
+      {/* Scans */}
+      <div className="mb-12">
+        <h2 className="text-xs text-muted-foreground mb-4">Scans</h2>
+
+        {scans && scans.length === 0 && (
+          <p className="text-sm text-muted-foreground py-10 text-center border border-dashed border-border">
+            No scans yet. Choose an agent above to start.
+          </p>
+        )}
+
+        {scans && scans.length > 0 && (
+          <div>
+            <div className="flex items-baseline gap-4 pb-3 border-b border-border text-xs text-muted-foreground">
+              <span className="w-20">status</span>
+              <span className="flex-1">agent</span>
+              <span className="w-40 text-right">started</span>
+            </div>
+
+            {/* Running scans first */}
+            {runningScans.map((scan) => (
+              <Link
+                key={scan._id}
+                href={`/projects/${projectId}/scan/${scan._id}`}
+                className="group flex items-center gap-4 py-3 border-b border-border hover:bg-accent/40 transition-colors duration-100 -mx-3 px-3"
+              >
+                <span className="w-20 text-sm text-destructive flex items-center gap-2">
+                  <span className="inline-block w-1.5 h-1.5 bg-destructive animate-pulse" />
+                  running
+                </span>
+                <span className="flex-1 text-sm group-hover:underline">
+                  {AGENT_LABELS[scan.agent]}
+                </span>
+                <span className="w-40 text-xs text-muted-foreground text-right tabular-nums">
+                  {new Date(scan.startedAt).toLocaleString()}
+                </span>
+              </Link>
+            ))}
+
+            {/* Other scans */}
+            {completedScans.map((scan) => (
+              <Link
+                key={scan._id}
+                href={`/projects/${projectId}/scan/${scan._id}`}
+                className="group flex items-center gap-4 py-3 border-b border-border hover:bg-accent/40 transition-colors duration-100 -mx-3 px-3"
+              >
+                <span className="w-20 text-sm text-muted-foreground">
+                  {scan.status}
+                </span>
+                <span className="flex-1 text-sm group-hover:underline">
+                  {AGENT_LABELS[scan.agent]}
+                </span>
+                <span className="w-40 text-xs text-muted-foreground text-right tabular-nums">
+                  {new Date(scan.startedAt).toLocaleString()}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Reports — detailed findings */}
       {reports && reports.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-sm font-medium">Reports</h2>
+        <div>
+          <h2 className="text-xs text-muted-foreground mb-6">Findings</h2>
+
           {reports.map((report) => (
-            <div
-              key={report._id}
-              className="border border-border rounded-lg p-4 space-y-3"
-            >
+            <div key={report._id} className="mb-10">
               {report.summary && (
-                <p className="text-sm">{report.summary}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-xl">
+                  {report.summary}
+                </p>
               )}
-              <div className="flex gap-2">
-                {["critical", "high", "medium", "low", "info"].map((sev) => {
-                  const count = report.findings.filter((f) => f.severity === sev).length;
-                  if (count === 0) return null;
-                  return (
-                    <Badge key={sev} variant="outline" className="text-xs font-mono">
-                      {count} {sev}
-                    </Badge>
-                  );
-                })}
-              </div>
-              <div className="space-y-2">
+
+              <div>
                 {report.findings.map((finding, i) => (
-                  <div key={i} className="text-sm border-l-2 border-border pl-3">
-                    <div className="font-medium">{finding.title}</div>
-                    <div className="text-muted-foreground text-xs mt-0.5">
-                      {finding.description}
+                  <div key={i} className="py-4 border-t border-border">
+                    {/* Metadata line */}
+                    <div className="flex items-baseline gap-3 mb-2">
+                      <span
+                        className={`text-xs font-medium ${
+                          finding.severity === "critical" || finding.severity === "high"
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {finding.severity}
+                      </span>
+                      {finding.location && (
+                        <>
+                          <span className="text-xs text-muted-foreground">&middot;</span>
+                          <span className="text-xs text-muted-foreground">
+                            {finding.location}
+                          </span>
+                        </>
+                      )}
                     </div>
+
+                    {/* Title */}
+                    <div className="text-sm font-medium mb-1.5">{finding.title}</div>
+
+                    {/* Description */}
+                    <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
+                      {finding.description}
+                    </p>
+
+                    {/* Recommendation */}
+                    {finding.recommendation && (
+                      <p className="text-sm text-muted-foreground mt-3 border-l-2 border-border pl-3 max-w-xl">
+                        {finding.recommendation}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
