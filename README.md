@@ -21,7 +21,7 @@ The only thing that changes is the tool suite. That's Re:Zero.
 ## Stuff we need to do
 
 - [ ] Get Claude Code SDK on reverse engineering
-- [ ] Fine-tune GLM-4.7V and Nemotron 3 Nano (30b-A3B) on reverse engineering and pentesting
+- [ ] RL-train GLM-4.7V and Nemotron 3 Nano (30b-A3B) on CTF environments (Prime Intellect environments hub) for reverse engineering and pentesting
 - [ ] Set up a web app (dashboard, "projects", project types so web, codebase, and hardware, with overlap allowed)
 - [ ] Convex backend (including functions which connect to modal and monitor your relevant sandboxes)
 - [ ] Modal sandboxes
@@ -38,7 +38,7 @@ The only thing that changes is the tool suite. That's Re:Zero.
 ## Team
 1. Shresht: claude code sdk, agent harnesses, modal sandboxes, convex backend, frontend (live agent streams, camera feed views, waveform visualization for fpga travces, scan results, unified reports), 0-day farming pipeline (on sandboxes), perplexity sonar, demo
 2. Kenneth: ChipWhisperer HDL -> Genesys 2, Pmod ADC, trigger logic, DDR3 trace buffer, python api for agent integration, ESP32 AES target setup with shunt resistor
-3. Mouad: find training data, QLoRAs (cybersec reasoning, vulnerability reasoning traces, PCBs, protocol analysis) on GLM-4.7V, Nemotron 3 Nano, create vLLM config for Modal deployment
+3. Mouad: RL training pipeline (Prime Intellect CTF environments, cybersec reasoning, vulnerability reasoning, PCBs, protocol analysis) on GLM-4.7V, Nemotron 3 Nano, create vLLM config for Modal deployment
 4. William: ESP32 probe controller firmware (drone, etc), drone flight controller interface, probe jig, wiring, camera, help shresht with frontend and agent harnesses, join kenneth on fpga 
 
 ## Project Structure
@@ -48,7 +48,7 @@ re-zero/
 ├── web/           # Next.js dashboard, Convex, Clerk auth
 ├── server/        # FastAPI, Claude Code SDK agents, Modal sandboxes, Perplexity Sonar
 ├── hardware/      # ESP32 firmware (William), FPGA RTL + Python API (Kenneth)
-├── training/      # data gen, QLoRA scripts, vLLM deploy configs (Mouad)
+├── training/      # RL training (Prime Intellect CTF envs), vLLM deploy configs (Mouad)
 └── targets/       # demo target info, intentionally vulnerable test apps
 ```
 
@@ -57,7 +57,7 @@ re-zero/
 - **Database:** Convex (real-time sync for live agent state → dashboard)
 - **API + Agents:** FastAPI, Claude Code SDK, Anthropic Agent SDK, Pydantic
 - **Compute:** Modal (sandboxes for code targets, GPUs for model serving + training)
-- **Fine-tuned Models:** GLM-4.7, Nemotron 3 Nano — both QLoRA, served via vLLM on Modal
+- **RL-trained Models:** GLM-4.7V, Nemotron 3 Nano — RL via Prime Intellect CTF environments, served via vLLM on Modal
 - **Research:** Perplexity Sonar API (CVE lookup, datasheets, component ID)
 - **Hardware Probing:** ESP32 (PlatformIO), USB serial bridge
 - **Side-Channel:** Kintex-7 FPGA (Verilog), ChipWhisperer Python analyzer
