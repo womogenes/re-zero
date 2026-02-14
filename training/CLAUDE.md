@@ -1,7 +1,12 @@
 # Training Module — Re:Zero
 
 ## What this is
-RL training pipeline for security-focused models using Prime Intellect's libraries (prime-rl, verifiers, environments hub), running on Modal GPUs ($5k credits). Trained models also get served via vLLM on Modal.
+RL training pipeline for security-focused models using Prime Intellect's libraries (prime-rl, verifiers, environments hub), running on Modal GPUs ($5k credits, tetracorp workspace). Trained models also get served via vLLM on Modal.
+
+## Current status (2026-02-14)
+
+### GLM-4.7-Flash training: ACTIVE
+GLM-4.7-Flash (`zai-org/GLM-4.7-Flash`) is a 30B MoE (3B active) text-only transformer with MLA (Multi-head Latent Attention). Architecture: `Glm4MoeLiteForCausalLM`. 64 routed experts + 1 shared expert, 4 experts per token, 47 layers, hidden_size=2048. Uses 4x H100: 1 for inference, 3 for training (FSDP + LoRA).
 
 ## Package management
 - **uv only**. Never use pip. Never manually edit pyproject.toml for package versions.
@@ -9,6 +14,7 @@ RL training pipeline for security-focused models using Prime Intellect's librari
 - Remove packages: `uv remove <package>`
 - Sync environment: `uv sync`
 - Install CLI tools: `uv tool install <tool>` (e.g. `uv tool install prime`)
+- **modal CLI**: use `.venv/bin/modal` (it's in the project venv, NOT global PATH)
 
 ## Prime Intellect stack
 
@@ -22,7 +28,12 @@ prime env install owner/name # install an environment
 We do NOT use `prime rl run` (that's PI's hosted infra). We run training on Modal instead.
 
 ### prime-rl
-Async RL training framework. Three components: trainer, orchestrator, inference (vLLM). Configs are TOML.
+Async RL training framework. Three components running as subprocesses:
+1. **Inference** — vLLM server for rollout generation (GPU 0)
+2. **Orchestrator** — batches prompts, sends to inference, collects rewards from environments
+3. **Trainer** — GRPO policy gradient updates via torchrun (remaining GPUs)
+
+Configs are TOML. Entry point: `rl @ <config.toml>`
 - Repo: github.com/PrimeIntellect-ai/prime-rl
 - Docs: docs.primeintellect.ai/prime-rl/
 
@@ -31,37 +42,65 @@ Library for RL environments and reward functions. Environments are Python packag
 - `uv add verifiers` (already installed)
 - Repo: github.com/PrimeIntellect-ai/verifiers
 
-## Models
-| Model | HuggingFace ID | Notes |
-|-------|---------------|-------|
-| GLM-4.7V | `THUDM/GLM-4.7V` | Vision model, needs 4x H100 for serving |
-| Nemotron 3 Nano | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` | MoE, 30B total / 3.5B active. FP8 variant for deployment: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8` |
+## Model
+| Model | HuggingFace ID | Params | Architecture | Training Status |
+|-------|---------------|--------|-------------|-----------------|
+| GLM-4.7-Flash | `zai-org/GLM-4.7-Flash` | 30B (3B active) | MoE transformer + MLA | Active (4x H100) |
 
 ## CTF environments (from intertwine on Prime Intellect Environments Hub)
-1. `intertwine/sv-env-redteam-attack` — red team attack simulation
+All 5 environments provide **continuous rewards** in [-1, +1] (NOT binary), enabling gradient signal for RL.
+
+1. `intertwine/sv-env-redteam-attack` — red team attack simulation (5 scenarios, 3-turn budget, composite rubric: 1.0x jailbreak_success + 0.25x strategy_sophistication)
 2. `intertwine/sv-env-code-vulnerability` — vulnerability detection & repair
 3. `intertwine/sv-env-config-verification` — security config auditing
-4. `intertwine/sv-env-network-logs` — network anomaly detection
-5. `intertwine/sv-env-phishing-detection` — phishing classification
+4. `intertwine/sv-env-phishing-detection` — phishing classification
+5. `intertwine/sv-env-network-logs` — network anomaly detection
 
 ## Modal (training + serving)
-All compute runs on Modal. We have $5k in credits.
+All compute runs on Modal (tetracorp workspace). We have $5k in credits.
 
-### Training
-- `modal run deploy/train.py --config nemotron-redteam.toml` — launch RL training
-- Configs are mounted from `configs/` into the container
+### Training commands
+```bash
+# Standalone entry point
+.venv/bin/modal run deploy/train_glm4flash.py --config glm4flash-redteam.toml
+.venv/bin/modal run deploy/train_glm4flash.py --config glm4flash-codevuln.toml --resume
+
+# Unified entry point (same thing)
+.venv/bin/modal run deploy/train.py --config glm4flash-redteam.toml
+```
+
+### Training infrastructure
+- Configs are mounted from `configs/` into the container at `/root/configs/`
 - Training uses prime-rl inside the Modal container (trainer + orchestrator + vLLM inference, all async)
 - Checkpoints are saved to the `re-zero-checkpoints` Modal Volume at `/root/checkpoints/`
-- Secrets: create once with `modal secret create re-zero-keys MLFLOW_TRACKING_URI=<key>`
-- GPU default: 2x H100 (adjust in deploy/train.py as needed)
+- GPU: 4x H100 (timeout: 120 min)
+- **HF token**: Stored in `huggingface` Modal secret as `HF_TOKEN`. Required for model downloads.
+- **Detached mode**: When launched with `modal run`, the app runs detached. Use `modal app list` and `modal app logs <app-id>` to monitor.
+- **Image caching**: Modal caches Docker images aggressively. To force a rebuild, change the image definition (e.g., add a comment to `.run_commands()`). Bumping version strings inside `run_function` may NOT trigger a rebuild.
+
+### Monitoring training
+```bash
+# List running apps
+.venv/bin/modal app list
+
+# Stream logs from a running app
+.venv/bin/modal app logs <app-id>
+
+# Stop a running app
+.venv/bin/modal app stop <app-id>
+```
+
+Key log lines to watch:
+- `Orchestrator Step N: Reward=X.XX` — reward should improve over steps
+- `Trainer Step N: Loss=X.XX, Entropy=X.XX` — loss should be NON-ZERO, entropy should decrease slowly
+- `Mismatch KL=X.XX` — measures inference/trainer logprob divergence (should be <1 for standard transformers)
+- `Throughput: X tokens/s` — inference speed
 
 ### Serving
-- `modal deploy deploy/serve_nemotron.py` — deploy Nemotron
-- `modal deploy deploy/serve_glm47v.py` — deploy GLM-4.7V
-- `modal serve deploy/serve_<model>.py` — dev mode with auto-reload
+- Serving script needs to be created for GLM-4.7-Flash (TODO)
 - Models served as OpenAI-compatible endpoints via vLLM
-- By default serves the base HF model. To serve a trained checkpoint, set `CHECKPOINT` in the serve script to the subfolder name (e.g. `"nemotron-nano-redteam-attack/step-200"`)
-- Three Modal Volumes: `re-zero-hf-cache` (HF downloads), `re-zero-vllm-cache` (vLLM cache), `re-zero-checkpoints` (trained weights)
+- To serve a trained checkpoint, set `CHECKPOINT` in the serve script to the subfolder name (e.g. `"glm4flash-redteam/step-50"`)
+- Four Modal Volumes: `re-zero-hf-cache` (HF downloads), `re-zero-vllm-cache` (vLLM cache), `re-zero-checkpoints` (trained weights), `re-zero-mlflow` (metrics)
 
 ### General
 - Run `modal setup` once to authenticate.
@@ -70,24 +109,134 @@ All compute runs on Modal. We have $5k in credits.
 ## File layout
 ```
 training/
-├── configs/          # prime-rl training TOML configs
-├── deploy/           # Modal scripts (training + serving)
-│   ├── common.py     # shared image, volumes
-│   ├── train.py      # RL training on Modal GPUs
-│   ├── serve_nemotron.py
-│   └── serve_glm47v.py
+├── configs/                            # prime-rl training TOML configs
+│   ├── glm4flash-redteam.toml         # GLM-4.7-Flash x Red Team
+│   ├── glm4flash-codevuln.toml        # GLM-4.7-Flash x Code Vulnerability
+│   ├── glm4flash-config-verification.toml # GLM-4.7-Flash x Config Verification
+│   ├── glm4flash-phishing.toml        # GLM-4.7-Flash x Phishing Detection
+│   └── glm4flash-network-logs.toml    # GLM-4.7-Flash x Network Logs
+├── deploy/
+│   ├── common.py                       # shared image, volumes
+│   ├── train.py                        # unified training entry point
+│   └── train_glm4flash.py             # standalone GLM-4.7-Flash training (4x H100)
 ├── CLAUDE.md
 ├── README.md
 └── pyproject.toml
 ```
 
+## GRPO training — how it works (prime-rl)
+
+### Algorithm
+GRPO (Group Relative Policy Optimization) is the RL algorithm used. Key steps per training step:
+1. **Rollout generation**: vLLM generates `batch_size * rollouts_per_example` completions from prompts
+2. **Reward collection**: Orchestrator sends completions to environment, gets rewards [-1, +1]
+3. **Advantage computation**: Per-prompt group normalization (mean=0, std=1 within each group of `rollouts_per_example`)
+4. **Policy gradient**: `loss = -(importance_ratio * advantages).detach() * trainer_logprobs` with masking
+
+### Loss function masking (critical for debugging)
+prime-rl's loss function (`prime_rl/trainer/rl/loss.py`) has THREE layers of importance ratio masking:
+1. **Token-level**: `token_mask_high/low` — masks individual tokens where ratio exceeds threshold
+2. **Geometric mean**: `geo_mask_high/low` — masks tokens where geometric mean ratio is extreme
+3. **Sequence-level**: `sequence_mask_high/low` — masks ENTIRE SEQUENCE if ANY single token exceeds threshold
+
+### Config reference (TOML)
+```toml
+# Required
+inference_gpu_ids = [0]           # GPUs for vLLM inference
+trainer_gpu_ids = [1, 2, 3]      # GPUs for trainer (torchrun FSDP)
+max_steps = 200                   # total training steps
+seq_len = 4096                    # max sequence length
+output_dir = "/root/checkpoints/run-name"
+
+[model]
+name = "zai-org/GLM-4.7-Flash"
+
+[wandb]
+project = "re-zero"
+name = "run-name"
+offline = true                    # we use mlflow instead
+
+[ckpt]
+interval = 5                      # checkpoint every N steps
+keep_last = 3                     # keep last N checkpoints
+
+[trainer.model]
+trust_remote_code = true
+
+[trainer.model.lora]
+rank = 16
+alpha = 32.0
+target_modules = ["q_b_proj", "kv_b_proj", "o_proj"]
+
+[trainer.optim]
+lr = 5e-6
+weight_decay = 0.0
+
+[orchestrator]
+batch_size = 128                  # prompts per step
+rollouts_per_example = 4          # completions per prompt (for GRPO advantage)
+
+[orchestrator.sampling]
+max_tokens = 512                  # max generation length
+
+[[orchestrator.env]]
+id = "intertwine/sv-env-redteam-attack"
+
+[inference]
+gpu_memory_utilization = 0.95
+
+[inference.model]
+trust_remote_code = true
+enable_auto_tool_choice = true
+tool_call_parser = "hermes"
+enforce_eager = true
+max_model_len = 4096
+
+[inference.parallel]
+dp = 1                            # data parallel replicas for inference
+```
+
+### Hyperparameter guidelines
+- **batch_size**: 128 for 4-GPU setup. Total rollouts = batch_size * rollouts_per_example
+- **rollouts_per_example**: 4 is minimum for meaningful GRPO advantage normalization. 8-16 for better signal
+- **lr**: 5e-6 for LoRA
+- **max_steps**: 50 for validation runs, 200 for real training
+- **max_tokens**: 512 for most CTF tasks (sufficient for tool calls and reasoning)
+
+## GLM-4.7-Flash — specific notes
+
+### Architecture details
+- Model type: `glm4_moe_lite` / `Glm4MoeLiteForCausalLM`
+- 47 layers, hidden_size=2048, 20 attention heads (MHA, no GQA)
+- MoE: 64 routed experts + 1 shared expert, top-4 routing, `noaux_tc` routing method
+- MLA: q_lora_rank=768, kv_lora_rank=512 (compressed attention, DeepSeek-V2/V3 style)
+- Vocab: 154,880 tokens, max context: 202,752 tokens
+- Requires transformers >= 5.0.0rc0 (installed from git in image)
+
+### GPU allocation
+- 4x H100 total: GPU 0 = vLLM inference, GPUs 1-3 = trainer (FSDP)
+- 30B params in BF16 ~ 60GB -> fits on 1 H100 for inference (with gpu_memory_utilization=0.95)
+- Training uses LoRA (rank=16) on attention projections — full fine-tuning would exceed 3-GPU memory
+
+### LoRA configuration
+- rank=16, alpha=32.0
+- target_modules: `["q_b_proj", "kv_b_proj", "o_proj"]` (MLA attention projections)
+- If LoRA fails to match any modules, inspect the model's module names and update target_modules
+- lr=5e-6 (higher than full fine-tuning since only training adapters)
+
+### Expected behavior (when working correctly)
+- Step 0: Loss > 0, Entropy ~4-5, Mismatch KL < 1.0 (pure transformer)
+- Reward should start around -0.5 to -0.7 and improve over steps
+- 512 rollouts per step (batch_size=128, rollouts_per_example=4)
+- Increase max_steps from 50 to 200 once training is confirmed working
+
 ## Workflow
 1. **Setup** — `uv sync`, `uv tool install prime`, `prime login`, `modal setup`
 2. **Install CTF environments** — `prime env install intertwine/sv-env-redteam-attack` (repeat for all 5)
-3. **Write training configs** — create TOML configs in `configs/` for each model x environment combo (see prime-rl docs for format)
-4. **Train on Modal** — `modal run deploy/train.py --config <config>.toml` to run RL training on Modal H100s
-5. **Iterate** — watch reward curves in mlflow, adjust configs, try different environments
-6. **Serve trained models** — update deploy scripts to point at trained checkpoints, `modal deploy deploy/serve_<model>.py` to serve as OpenAI-compatible endpoints
+3. **Train on Modal** — `.venv/bin/modal run deploy/train_glm4flash.py --config glm4flash-redteam.toml`
+4. **Monitor** — `.venv/bin/modal app list` then `.venv/bin/modal app logs <app-id>`
+5. **Iterate** — watch reward curves, adjust configs, try different environments
+6. **Serve trained models** — create serve script, point at trained checkpoints
 
 ## Rules
 - Never use pip
@@ -96,3 +245,6 @@ training/
 - Never hardcode API keys or tokens
 - Keep configs in configs/ as TOML files
 - Keep deployment scripts in deploy/
+- Always use `.venv/bin/modal` (not bare `modal`) — it's in the project venv
+- Before launching training, always check `modal app list` for already-running apps to avoid duplicates
+- Stop previous runs before starting new ones on the same config to avoid wasting credits

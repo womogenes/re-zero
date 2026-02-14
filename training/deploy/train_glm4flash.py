@@ -1,7 +1,9 @@
-"""Run GLM-4.7V training on Modal GPUs.
+"""Run GLM-4.7-Flash training on Modal GPUs.
 
-Separate from Nemotron to avoid the mamba-ssm build dependency.
-GLM is a pure transformer — no mamba-ssm needed.
+GLM-4.7-Flash (zai-org/GLM-4.7-Flash) is a 30B MoE (3B active) text-only
+transformer with MLA (Multi-head Latent Attention). No mamba-ssm needed.
+Requires transformers from main branch for Glm4MoeLiteForCausalLM support.
+Uses 4x H100: GPU 0 = inference (vLLM), GPUs 1-3 = trainer (FSDP + LoRA).
 """
 
 import modal
@@ -22,7 +24,7 @@ VOLUMES = {
     "/root/mlflow": mlflow_vol,
 }
 
-glm_image = (
+glm4flash_image = (
     modal.Image.from_registry(
         "nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.12"
     )
@@ -32,6 +34,8 @@ glm_image = (
     .run_commands(
         f"git clone https://github.com/PrimeIntellect-ai/prime-rl.git {PRIME_RL_DIR}",
         f"cd {PRIME_RL_DIR} && uv sync --no-dev --extra flash-attn",
+        # GLM-4.7-Flash (glm4_moe_lite) requires latest transformers
+        f"VIRTUAL_ENV={PRIME_RL_VENV} uv pip install git+https://github.com/huggingface/transformers.git",
         f"VIRTUAL_ENV={PRIME_RL_VENV} uv pip install mlflow 'huggingface-hub[hf_xet]'",
     )
     .env({
@@ -41,22 +45,23 @@ glm_image = (
     .add_local_dir("configs", remote_path="/root/configs")
 )
 
-app = modal.App("re-zero-glm")
+app = modal.App("re-zero-glm4flash")
 
 
 @app.function(
-    image=glm_image,
-    gpu="H100:2",
+    image=glm4flash_image,
+    gpu="H100:4",
     timeout=120 * MINUTES,
     volumes=VOLUMES,
+    secrets=[modal.Secret.from_name("huggingface")],
 )
 def train(config_path: str, resume: bool = False):
-    """Train GLM-4.7V."""
+    """Train GLM-4.7-Flash."""
     import os
     import subprocess
 
     full_path = f"/root/configs/{config_path}"
-    print(f"Starting GLM training with config: {full_path}")
+    print(f"Starting GLM-4.7-Flash training with config: {full_path}")
     if resume:
         print("Resume mode: will resume from latest checkpoint")
 
@@ -78,12 +83,12 @@ def train(config_path: str, resume: bool = False):
 
 
 @app.local_entrypoint()
-def main(config: str = "glm47v-redteam.toml", resume: bool = False):
-    """Launch GLM training.
+def main(config: str = "glm4flash-redteam.toml", resume: bool = False):
+    """Launch GLM-4.7-Flash training.
 
     Examples:
-        modal run deploy/train_glm.py --config glm47v-redteam.toml
-        modal run deploy/train_glm.py --config glm47v-codevuln.toml --resume
+        modal run deploy/train_glm4flash.py --config glm4flash-redteam.toml
+        modal run deploy/train_glm4flash.py --config glm4flash-codevuln.toml --resume
     """
-    print(f"[GLM] Launching: {config}")
+    print(f"[GLM-4.7-Flash] Launching: {config}")
     train.remote(config, resume)
