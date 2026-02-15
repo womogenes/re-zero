@@ -1,4 +1,3 @@
-#include <HTTPClient.h>
 #include <SPI.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
@@ -42,98 +41,13 @@ static const uint32_t SERIAL_BAUD = 921600;
 static const uint32_t NET_DIAG_EVERY_MS = 5000;
 static const uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
 
-static bool g_portal_done = false;
+// WebSocket throughput guardrails: keep lwIP stable under load.
+static const uint32_t WS_SEND_MAX_PER_LOOP = 8;
+static const uint32_t WS_SEND_YIELD_MS = 2;
 
-static bool http_get_head(const char* url, String* out_firstline, String* out_location) {
-  if (out_firstline) *out_firstline = "";
-  if (out_location) *out_location = "";
-
-  HTTPClient http;
-  WiFiClient c;
-  const char* hdrs[] = {"Location"};
-  http.collectHeaders(hdrs, 1);
-  if (!http.begin(c, url)) return false;
-  http.setTimeout(2500);
-  int code = http.GET();
-  if (out_firstline) *out_firstline = String(code);
-  if (code > 0) {
-    if (out_location) *out_location = http.header("Location");
-  }
-  http.end();
-  return (code > 0);
-}
-
-static bool http_get_text(const char* url, int* out_code, String* out_location, String* out_body, size_t body_cap = 256) {
-  if (out_code) *out_code = 0;
-  if (out_location) *out_location = "";
-  if (out_body) *out_body = "";
-
-  HTTPClient http;
-  WiFiClient c;
-  const char* hdrs[] = {"Location"};
-  http.collectHeaders(hdrs, 1);
-  if (!http.begin(c, url)) return false;
-  http.setTimeout(3500);
-  int code = http.GET();
-  if (out_code) *out_code = code;
-  if (code > 0) {
-    if (out_location) *out_location = http.header("Location");
-    if (out_body) {
-      String b = http.getString();
-      if (b.length() > body_cap) b = b.substring(0, body_cap);
-      *out_body = b;
-    }
-  }
-  http.end();
-  return (code > 0);
-}
-
-static String qparam(const String& url, const char* key) {
-  int q = url.indexOf('?');
-  if (q < 0) return "";
-  String qs = url.substring(q + 1);
-  String k = String(key) + "=";
-  int i = qs.indexOf(k);
-  if (i < 0) return "";
-  int s = i + k.length();
-  int e = qs.indexOf('&', s);
-  if (e < 0) e = qs.length();
-  return qs.substring(s, e);
-}
-
-static bool portal_accept_from_location(const String& loc) {
-  if (loc.length() == 0) return false;
-  if (!loc.startsWith("https://portal.mist.com/logon?")) return false;
-
-  String ap_mac = qparam(loc, "ap_mac");
-  String client_mac = qparam(loc, "client_mac");
-  String wlan_id = qparam(loc, "wlan_id");
-  String url = qparam(loc, "url");
-  if (ap_mac.length() == 0 || client_mac.length() == 0 || wlan_id.length() == 0) {
-    Serial.printf("[PORTAL] missing params ap_mac=%d client_mac=%d wlan_id=%d\n",
-                  ap_mac.length(), client_mac.length(), wlan_id.length());
-    return false;
-  }
-
-  String body = "ap_mac=" + ap_mac + "&client_mac=" + client_mac + "&wlan_id=" + wlan_id;
-  if (url.length()) body += "&url=" + url;
-  body += "&tos=true&auth_method=passphrase";
-
-  WiFiClientSecure sc;
-  sc.setInsecure();  // captive portal; avoid CA management for now
-  HTTPClient https;
-  https.setTimeout(5000);
-  if (!https.begin(sc, loc)) {
-    Serial.println("[PORTAL] https begin failed");
-    return false;
-  }
-  https.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  https.addHeader("User-Agent", "esp32-uplink");
-  int code = https.POST((uint8_t*)body.c_str(), body.length());
-  Serial.printf("[PORTAL] POST code=%d\n", code);
-  https.end();
-  return (code > 0);
-}
+// NOTE: portal automation + periodic HTTP probes were removed because they were triggering
+// lwIP asserts (`pbuf_free: p->ref > 0`) on ESP32 core 3.3.5. Keep this firmware focused
+// on WSS + SPI forwarding.
 
 // ========= State =========
 static volatile bool g_wifi_ok = false;
@@ -156,6 +70,9 @@ static volatile bool g_cmd_pending = false;
 static uint8_t g_cmd_type = 0;
 static uint16_t g_cmd_len = 0;
 static uint8_t g_cmd_pay[64];
+
+static volatile uint32_t g_cmd_rx_n = 0;
+static volatile uint8_t g_cmd_last_typ = 0;
 
 static void led_set(bool on) { digitalWrite(PIN_LED, on ? HIGH : LOW); }
 
@@ -337,6 +254,8 @@ static void ws_event(WStype_t type, uint8_t* payload, size_t length) {
       g_cmd_len = len;
       if (len) memcpy((void*)g_cmd_pay, payload + 1, len);
       g_cmd_pending = true;
+      g_cmd_last_typ = typ;
+      g_cmd_rx_n++;
       break;
     }
     default:
@@ -348,7 +267,8 @@ static void ws_task(void*) {
   ws.beginSSL(CLOUD_HOST, CLOUD_PORT, CLOUD_PATH);
   ws.onEvent(ws_event);
   ws.setReconnectInterval(2000);
-  ws.enableHeartbeat(15000, 3000, 2);
+  // Heartbeats have caused instability on some ESP32 core/lwIP combos; keep it off.
+  // If you need keepalive, rely on TCP keepalive + app-level traffic.
 
   static uint8_t out[1 + 1500];
 
@@ -363,93 +283,36 @@ static void ws_task(void*) {
 
     if (g_ws_ok && g_ws_video_q != nullptr) {
       WsVideoChunk c;
-      while (xQueueReceive(g_ws_video_q, &c, 0) == pdTRUE) {
+      uint32_t sent = 0;
+      while (sent < WS_SEND_MAX_PER_LOOP && xQueueReceive(g_ws_video_q, &c, 0) == pdTRUE) {
         uint16_t n = c.len;
         if (n > sizeof(c.data)) n = sizeof(c.data);
         out[0] = 0x02;  // device video chunk (Modal protocol)
         memcpy(out + 1, c.data, n);
         ws.sendBIN(out, (size_t)(1 + n));
         ws.loop();
+        sent++;
       }
     }
-
-    vTaskDelay(pdMS_TO_TICKS(1));
+    vTaskDelay(pdMS_TO_TICKS(WS_SEND_YIELD_MS));
   }
 }
 
-static void net_diag_task(void*) {
+static void diag_task(void*) {
   while (true) {
     if (!g_wifi_ok || WiFi.status() != WL_CONNECTED) {
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;
     }
 
-    print_net_info();
-
-    IPAddress resolved;
-    bool dns_ok = WiFi.hostByName("example.com", resolved);
-    Serial.printf("[NET] dns example.com -> %s (%s)\n",
-                  resolved.toString().c_str(),
-                  dns_ok ? "ok" : "fail");
-
-    // Internet-ish reachability: TCP connect probes (not ICMP ping).
-    // Prefer port 80 since it's typically allowed when anything is.
-    {
-      WiFiClient c;
-      c.setTimeout(1200);
-      IPAddress ip(1, 1, 1, 1);
-      bool ok = c.connect(ip, 80);
-      Serial.printf("[NET] tcp public %s:%u -> %s\n", ip.toString().c_str(), 80, ok ? "ok" : "fail");
-      c.stop();
-    }
-
-    // HTTP probe (gives signal even if raw IP connect is weird).
-    {
-      WiFiClient c;
-      c.setTimeout(1500);
-      bool ok = c.connect("example.com", 80);
-      Serial.printf("[NET] http example.com:80 -> %s\n", ok ? "ok" : "fail");
-      if (ok) {
-        c.print("GET / HTTP/1.0\r\nHost: example.com\r\nConnection: close\r\n\r\n");
-        String line = c.readStringUntil('\n');
-        line.trim();
-        Serial.printf("[NET] http firstline: %s\n", line.c_str());
-      }
-      c.stop();
-    }
-
-    // "Curl" probes to see if we're still in a walled-garden / portal redirect.
-    {
-      String first, loc;
-      http_get_head("http://kv.wfeng.dev/hello", &first, &loc);
-      Serial.printf("[CURL] http://kv.wfeng.dev/hello -> %s\n", first.c_str());
-      if (loc.length()) Serial.printf("[CURL] location: %s\n", loc.c_str());
-
-      // If we got redirected to Mist portal, attempt TOS accept once per boot.
-      if (!g_portal_done && loc.startsWith("https://portal.mist.com/logon?")) {
-        Serial.println("[PORTAL] detected, attempting auto-accept...");
-        g_portal_done = true;
-        portal_accept_from_location(loc);
-      }
-
-      first = "";
-      loc = "";
-      http_get_head("http://icanhazip.com/", &first, &loc);
-      Serial.printf("[CURL] http://icanhazip.com/ -> %s\n", first.c_str());
-      if (loc.length()) Serial.printf("[CURL] location: %s\n", loc.c_str());
-
-      int code = 0;
-      String body;
-      String loc2;
-      if (http_get_text("http://icanhazip.com/", &code, &loc2, &body, 128)) {
-        body.trim();
-        Serial.printf("[CURL] icanhazip body: %s\n", body.c_str());
-      }
-    }
-    Serial.printf("[WS] ok=%d q=%u target=%s\n",
+    Serial.printf("[STAT] ip=%s rssi=%d ws=%d q=%u heap=%u cmd_rx=%lu last=%02x\n",
+                  WiFi.localIP().toString().c_str(),
+                  WiFi.RSSI(),
                   (int)g_ws_ok,
                   (unsigned)(g_ws_video_q ? uxQueueMessagesWaiting(g_ws_video_q) : 0),
-                  CLOUD_HOST);
+                  (unsigned)ESP.getFreeHeap(),
+                  (unsigned long)g_cmd_rx_n,
+                  (unsigned)g_cmd_last_typ);
 
     vTaskDelay(pdMS_TO_TICKS(NET_DIAG_EVERY_MS));
   }
@@ -496,7 +359,12 @@ static void spi_poll_task(void*) {
           if (n > sizeof(c.data)) n = sizeof(c.data);
           c.len = n;
           memcpy(c.data, g_spi_rx + SPI_HDR_BYTES, n);
-          (void)xQueueSend(g_ws_video_q, &c, 0);
+          if (xQueueSend(g_ws_video_q, &c, 0) != pdTRUE) {
+            // Drop oldest then try once more.
+            WsVideoChunk drop;
+            (void)xQueueReceive(g_ws_video_q, &drop, 0);
+            (void)xQueueSend(g_ws_video_q, &c, 0);
+          }
         }
       }
     }
@@ -519,9 +387,9 @@ void setup() {
   wifi_connect_loop();
   Serial.printf("[WS] target wss://%s%s\n", CLOUD_HOST, CLOUD_PATH);
 
-  g_ws_video_q = xQueueCreate(6, sizeof(WsVideoChunk));
+  g_ws_video_q = xQueueCreate(24, sizeof(WsVideoChunk));
   xTaskCreatePinnedToCore(ws_task, "ws", 8192, nullptr, 3, nullptr, 0);
-  xTaskCreatePinnedToCore(net_diag_task, "net_diag", 4096, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(diag_task, "diag", 4096, nullptr, 1, nullptr, 0);
   xTaskCreatePinnedToCore(spi_poll_task, "spi_poll", 4096, nullptr, 3, nullptr, 1);
 }
 

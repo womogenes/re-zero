@@ -73,6 +73,9 @@ class DeviceState:
     # A condition to notify all UI sockets when a new JPEG is available.
     jpeg_cv: asyncio.Condition = field(default_factory=asyncio.Condition)
 
+    chunk_n: int = 0
+    chunk_bytes: int = 0
+
 
 STATE: Dict[str, DeviceState] = {}
 
@@ -98,7 +101,8 @@ MSG_UI_JPEG = 0x01
 MSG_DEV_VCHUNK = 0x02
 
 
-@app.function(image=image)
+# Single container: UI + device must hit the same in-memory STATE, otherwise commands/video vanish.
+@app.function(image=image, keep_warm=1, concurrency_limit=1, allow_concurrent_inputs=100)
 @modal.asgi_app(label=WEB_LABEL)
 def web_app():
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -119,6 +123,8 @@ def web_app():
                 "jpeg_age_s": (now - st.jpeg_ts) if st.jpeg_ts else None,
                 "jpeg_n": st.jpeg_n,
                 "cmd_q": st.cmd_q.qsize(),
+                "chunk_n": st.chunk_n,
+                "chunk_bytes": st.chunk_bytes,
             }
         return JSONResponse(out)
 
@@ -126,6 +132,7 @@ def web_app():
     async def ws_device(ws: WebSocket, device: str):
         await ws.accept()
         st = st_for(device)
+        print(f"ws_device connected device={device}", flush=True)
 
         async def sender():
             while True:
@@ -144,6 +151,8 @@ def web_app():
                 typ = data[0]
                 if typ != MSG_DEV_VCHUNK:
                     continue
+                st.chunk_n += 1
+                st.chunk_bytes += max(0, len(data) - 1)
                 jpg = st.ras.push(data[1:])
                 if jpg:
                     st.jpeg = jpg
@@ -154,6 +163,7 @@ def web_app():
         except WebSocketDisconnect:
             pass
         finally:
+            print(f"ws_device disconnected device={device}", flush=True)
             send_task.cancel()
             with contextlib.suppress(Exception):
                 await send_task
@@ -162,14 +172,19 @@ def web_app():
     async def ws_ui(ws: WebSocket, device: str):
         await ws.accept()
         st = st_for(device)
+        print(f"ws_ui connected device={device}", flush=True)
 
         async def video_pusher():
             last_n = -1
             while True:
                 async with st.jpeg_cv:
-                    await st.jpeg_cv.wait_for(lambda: st.jpeg_n != last_n)
-                    last_n = st.jpeg_n
-                    jpg = st.jpeg
+                    if st.jpeg and st.jpeg_n != last_n:
+                        last_n = st.jpeg_n
+                        jpg = st.jpeg
+                    else:
+                        await st.jpeg_cv.wait_for(lambda: st.jpeg_n != last_n)
+                        last_n = st.jpeg_n
+                        jpg = st.jpeg
                 if jpg:
                     await ws.send_bytes(bytes([MSG_UI_JPEG]) + jpg)
 
@@ -198,6 +213,7 @@ def web_app():
         except WebSocketDisconnect:
             pass
         finally:
+            print(f"ws_ui disconnected device={device}", flush=True)
             push_task.cancel()
             with contextlib.suppress(Exception):
                 await push_task
