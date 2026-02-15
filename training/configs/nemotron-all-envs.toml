@@ -1,0 +1,71 @@
+# OpenReasoning-Nemotron-14B — All 5 CTF Environments (combined)
+# Qwen2ForCausalLM (standard transformer, 14.7B dense)
+# 4x H100: 1 inference + 3 training (FSDP2 + LoRA)
+# Prompts from all envs are mixed into each batch.
+
+inference_gpu_ids = [0]
+trainer_gpu_ids = [1, 2, 3]
+
+max_steps = 200
+seq_len = 4096
+output_dir = "/root/checkpoints/nemotron-all-envs"
+
+[model]
+name = "nvidia/OpenReasoning-Nemotron-14B"
+
+[wandb]
+project = "re-zero"
+name = "nemotron-all-envs"
+offline = true
+
+[ckpt]
+interval = 5
+
+[trainer.model]
+impl = "auto"
+
+[trainer.model.lora]
+rank = 32
+alpha = 64
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+[trainer.tokenizer]
+name = "nvidia/OpenReasoning-Nemotron-14B"
+
+[trainer.optim]
+lr = 1e-5
+
+[orchestrator]
+batch_size = 128
+rollouts_per_example = 4
+
+[orchestrator.sampling]
+max_tokens = 1024
+
+[[orchestrator.env]]
+id = "intertwine/sv-env-redteam-attack"
+name = "redteam-attack"
+
+[[orchestrator.env]]
+id = "intertwine/sv-env-code-vulnerability"
+name = "code-vulnerability"
+
+[[orchestrator.env]]
+id = "intertwine/sv-env-config-verification"
+name = "config-verification"
+
+[[orchestrator.env]]
+id = "intertwine/sv-env-network-logs"
+name = "network-logs"
+
+[[orchestrator.env]]
+id = "intertwine/sv-env-phishing-detection"
+name = "phishing-detection"
+
+[inference]
+
+[inference.model]
+max_model_len = 65536
+
+[inference.parallel]
+dp = 1
