@@ -29,7 +29,7 @@ freq = 1
 [trainer.model.lora]
 rank = 32
 alpha = 64
-target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
 
 [trainer.optim]
 lr = 1e-5
