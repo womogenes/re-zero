@@ -148,11 +148,12 @@ def generate_report_local(bf16_data: dict, fp8_data: dict, output_dir: str) -> s
         + [{"Mode": "FP8", "Latency (s)": l} for l in fp8_data["latencies"]]
     )
     df_dist = pd.DataFrame(dist_records)
-    sns.boxplot(data=df_dist, x="Mode", y="Latency (s)", palette=palette,
-                ax=ax, width=0.4, linewidth=1.5, fliersize=4)
-    sns.stripplot(data=df_dist, x="Mode", y="Latency (s)", palette=palette,
-                  ax=ax, size=6, alpha=0.6, jitter=True,
-                  edgecolor="gray", linewidth=0.5)
+    sns.boxplot(data=df_dist, x="Mode", y="Latency (s)", hue="Mode",
+                palette=palette, ax=ax, width=0.4, linewidth=1.5,
+                fliersize=4, legend=False)
+    sns.stripplot(data=df_dist, x="Mode", y="Latency (s)", hue="Mode",
+                  palette=palette, ax=ax, size=6, alpha=0.6, jitter=True,
+                  edgecolor="white", linewidth=0.5, legend=False)
     for i, (mode, data) in enumerate([("BF16", bf16_data), ("FP8", fp8_data)]):
         ax.text(i, data["p90_latency_s"], f'p90={data["p90_latency_s"]:.1f}',
                 ha="center", va="bottom", fontsize=8, color="gray")
