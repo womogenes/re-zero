@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Drone Control</title>
+    <style>
+      :root {
+        --bg: #0b0f14;
+        --panel: #111825;
+        --text: #e6edf3;
+        --muted: #8aa0b6;
+        --accent: #7dd3fc;
+        --danger: #fb7185;
+        --ok: #34d399;
+        --border: rgba(255, 255, 255, 0.12);
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: radial-gradient(1200px 600px at 20% 0%, rgba(125, 211, 252, 0.12), transparent 60%),
+          radial-gradient(900px 500px at 80% 20%, rgba(52, 211, 153, 0.10), transparent 55%),
+          var(--bg);
+        color: var(--text);
+        font: 14px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 24px auto;
+        padding: 0 16px;
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 16px;
+      }
+      @media (max-width: 980px) {
+        .wrap {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: linear-gradient(180deg, rgba(17, 24, 37, 0.95), rgba(17, 24, 37, 0.85));
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        overflow: hidden;
+      }
+      .card h2 {
+        margin: 0;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .video {
+        position: relative;
+        aspect-ratio: 16 / 9;
+        background: #000;
+      }
+      .video img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+        image-rendering: auto;
+      }
+      .hud {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(6px);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #64748b;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08) inset;
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.bad {
+        background: var(--danger);
+      }
+      .mono {
+        color: var(--muted);
+      }
+      .panel {
+        padding: 14px 16px;
+      }
+      .keys {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .k {
+        padding: 10px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--muted);
+        user-select: none;
+      }
+      .k.on {
+        border-color: rgba(125, 211, 252, 0.6);
+        color: var(--text);
+        background: rgba(125, 211, 252, 0.12);
+      }
+      .btns {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      button {
+        padding: 10px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text);
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: rgba(255, 255, 255, 0.3);
+      }
+      button.danger {
+        border-color: rgba(251, 113, 133, 0.55);
+        background: rgba(251, 113, 133, 0.10);
+      }
+      .help {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      code {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h2>Video</h2>
+        <div class="video">
+          <img id="vid" alt="video stream" />
+          <div class="hud">
+            <div class="row">
+              <div id="dot" class="dot bad"></div>
+              <div id="status">disconnected</div>
+            </div>
+            <div class="mono" style="margin-top: 6px">
+              keys: <span id="keys">none</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Controls</h2>
+        <div class="panel">
+          <div class="help">
+            Focus this tab. Controls:
+            <div><code>WASD</code> strafe/pitch</div>
+            <div><code>ArrowUp/ArrowDown</code> throttle</div>
+            <div><code>ArrowLeft/ArrowRight</code> yaw</div>
+            <div><code>Shift</code> takeoff, <code>Ctrl</code> land</div>
+            <div><code>Space</code> e-stop</div>
+          </div>
+
+          <div class="keys" id="keysGrid"></div>
+
+          <div class="btns">
+            <button id="takeoff">Takeoff (Shift)</button>
+            <button id="land">Land (Ctrl)</button>
+            <button id="estop" class="danger">E-Stop (Space)</button>
+          </div>
+
+          <div class="help">
+            Safety: keep props away from fingers. If the drone goes weird, hit <code>Space</code>.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const MOVE_KEYS = new Set(["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+      const pressed = new Set();
+
+      const vid = document.getElementById("vid");
+      const dot = document.getElementById("dot");
+      const statusEl = document.getElementById("status");
+      const keysEl = document.getElementById("keys");
+      const keysGrid = document.getElementById("keysGrid");
+
+      let ws = null;
+      let lastUrl = null;
+
+      function setStatus(ok, txt) {
+        dot.className = "dot " + (ok ? "ok" : "bad");
+        statusEl.textContent = txt;
+      }
+
+      function renderKeys() {
+        const items = ["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Shift", "Control", "Space"];
+        keysGrid.innerHTML = "";
+        for (const k of items) {
+          const el = document.createElement("div");
+          el.className = "k" + (pressed.has(k) ? " on" : "");
+          el.textContent = k;
+          keysGrid.appendChild(el);
+        }
+        const arr = Array.from(pressed).sort();
+        keysEl.textContent = arr.length ? arr.join(" ") : "none";
+      }
+
+      function send(obj) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify(obj));
+      }
+
+      function syncMovement() {
+        const keys = Array.from(pressed).filter((k) => MOVE_KEYS.has(k));
+        send({ t: "sync", keys });
+      }
+
+      function resetAll() {
+        pressed.clear();
+        renderKeys();
+        send({ t: "reset" });
+      }
+
+      function connect() {
+        const scheme = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${scheme}://${location.host}/ws`);
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => {
+          setStatus(true, "connected");
+          syncMovement();
+        };
+        ws.onclose = () => {
+          setStatus(false, "disconnected");
+          ws = null;
+          setTimeout(connect, 800);
+        };
+        ws.onerror = () => {
+          setStatus(false, "ws error");
+        };
+        ws.onmessage = (ev) => {
+          if (typeof ev.data === "string") return;
+          const buf = ev.data;
+          if (!(buf instanceof ArrayBuffer)) return;
+          const blob = new Blob([buf], { type: "image/jpeg" });
+          const url = URL.createObjectURL(blob);
+          if (lastUrl) URL.revokeObjectURL(lastUrl);
+          lastUrl = url;
+          vid.src = url;
+        };
+      }
+
+      function onKeyDown(e) {
+        const k = e.key;
+        if (MOVE_KEYS.has(k) || k === "Shift" || k === "Control" || k === " ") {
+          e.preventDefault();
+        }
+        if (e.repeat) return;
+
+        if (k === " ") {
+          pressed.add("Space");
+          renderKeys();
+          send({ t: "action", a: "estop" });
+          return;
+        }
+        if (k === "Shift") {
+          pressed.add("Shift");
+          renderKeys();
+          send({ t: "action", a: "takeoff" });
+          return;
+        }
+        if (k === "Control") {
+          pressed.add("Control");
+          renderKeys();
+          send({ t: "action", a: "land" });
+          return;
+        }
+
+        if (MOVE_KEYS.has(k)) {
+          pressed.add(k);
+          renderKeys();
+          syncMovement();
+        }
+      }
+
+      function onKeyUp(e) {
+        const k = e.key;
+        const keyName = k === " " ? "Space" : k;
+        if (pressed.has(keyName)) {
+          pressed.delete(keyName);
+          renderKeys();
+          syncMovement();
+        }
+      }
+
+      window.addEventListener("keydown", onKeyDown, { passive: false });
+      window.addEventListener("keyup", onKeyUp, { passive: false });
+      window.addEventListener("blur", resetAll);
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) resetAll();
+      });
+
+      document.getElementById("takeoff").onclick = () => send({ t: "action", a: "takeoff" });
+      document.getElementById("land").onclick = () => send({ t: "action", a: "land" });
+      document.getElementById("estop").onclick = () => send({ t: "action", a: "estop" });
+
+      renderKeys();
+      connect();
+    </script>
+  </body>
+</html>
+
