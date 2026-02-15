@@ -60,9 +60,16 @@ set_property -dict { PACKAGE_PIN P26  IOSTANDARD LVCMOS33 } [get_ports { sw[6] }
 set_property -dict { PACKAGE_PIN P27  IOSTANDARD LVCMOS33 } [get_ports { sw[7] }]; #IO_25_15 Sch=sw[7]
 
 # https://digilent.com/reference/programmable-logic/genesys-2/reference-manual
-# PMOD differential pairs
-set_property -dict { PACKAGE_PIN U27  IOSTANDARD LVDS_25 } [get_ports { esp_sig_p }];  # JA1_P
-set_property -dict { PACKAGE_PIN U28  IOSTANDARD LVDS_25 } [get_ports { esp_sig_n }];  # JA1_N
+# During compilation, the TDC sensor is configured to pass timing
+# checks. The phase relationship 𝜙 is unconstrained, and 𝜃 is set to
+# 2𝜋. This means that the TDC sensor cannot be detected by tools
+# that check for timing violations [20].
+set_property -dict { PACKAGE_PIN U27 IOSTANDARD LVCMOS33 } [get_ports { esp_clk_gpio }];  # JA1_P
+create_clock -add -name esp_clk_pin -period 25.00 -waveform {0 12.5} [get_ports { esp_clk_gpio }];
+set_property -dict { PACKAGE_PIN U28 IOSTANDARD LVCMOS33 } [get_ports { esp_trigger_gpio }];  # JC1
+set_clock_groups -asynchronous \
+    -group [get_clocks -include_generated_clocks sysclk_p] \
+    -group [get_clocks -include_generated_clocks esp_clk_pin]
 
 # PMOD A Signals (this project top-level currently has no `pmoda[]` ports)
 # set_property -dict {PACKAGE_PIN F14 IOSTANDARD LVCMOS33}  [ get_ports {pmoda[0]} ]

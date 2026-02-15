@@ -12,7 +12,7 @@ set_param general.maxThreads 16
 
 # set partNum xc7a200t-fbg484-1
 set partNum xc7k325t-ffg900-2
-set outputDir obj_rtx
+set outputDir obj_ken
 file mkdir $outputDir
 set files [glob -nocomplain "$outputDir/*"]
 # if {[llength $files] != 0} {
@@ -25,37 +25,20 @@ set files [glob -nocomplain "$outputDir/*"]
 
 # read in all system verilog files:
 set sources_sv [ concat \
-    [ glob ./hdl/constants.sv ] \
-    [ glob ./hdl/pipeline.sv ] \
-    [ glob ./hdl/clock/*.sv ] \
-    [ glob ./hdl/hdmi/*.sv ] \
-    [ glob ./hdl/types/*.sv ] \
-    [ glob ./hdl/math/*.sv ] \
-    [ glob ./hdl/rng/*.sv ] \
-    [ glob ./hdl/rtx/*.sv ] \
-    [ glob ./hdl/dram/*.sv ] \
-    [ glob ./hdl/uart/*.sv ] \
-    [ glob ./hdl/mem/*.sv ] \
-    [ glob ./hdl/seven_seg/*.sv ] \
-    [ glob ./hdl/top_level_rtx.sv ] \
+    [ glob ./hdl/*.sv ]
 ]
 read_verilog -sv $sources_sv
 
 # read in all (if any) verilog files:
 set sources_v [ concat \
-    [ glob -nocomplain ./hdl/hdmi/*.v ] \
-    [ glob -nocomplain ./hdl/dram/*.v ] \
-    [ glob -nocomplain ./hdl/mem/*.v ] \
+    [ glob -nocomplain ./hdl/clk_wiz.v ]
 ]
 if {[llength $sources_v] > 0 } {
     read_verilog $sources_v
 }
 
 # read in constraint files:
-# - Shared pin/IO constraints live in `xdc/top_level.xdc`.
-# - RTX-only net constraints live in `xdc/top_level_rtx_spec.xdc`.
-read_xdc ./xdc/top_level.xdc
-read_xdc ./xdc/top_level_rtx_spec.xdc
+read_xdc ./xdc/genesys2.xdc
 
 # read in all (if any) hex memory files:
 set sources_mem [ glob -nocomplain ./data/*.mem ]
@@ -78,7 +61,7 @@ generate_target all [get_ips]
 synth_ip [get_ips]
 
 #Run Synthesis
-synth_design -top top_level -part $partNum -verbose
+synth_design -top top_level_tdc -part $partNum -verbose
 #write_checkpoint -force $outputDir/post_synth.dcp
 report_timing_summary -file $outputDir/post_synth_timing_summary.rpt
 report_utilization -file $outputDir/post_synth_util.rpt -hierarchical -hierarchical_depth 16
