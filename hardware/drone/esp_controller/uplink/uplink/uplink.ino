@@ -1,7 +1,7 @@
 #include <SPI.h>
-#include <WebSocketsClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <WiFiUdp.h>
 
 #include "../../common/spi_link.h"
 #include "esp_wifi.h"
@@ -13,12 +13,10 @@
 static const char* UPLINK_SSID = "Stanford Visitor";
 static const char* UPLINK_PASS = "";  // open? if not, set here
 
-// Modal cloud WebSocket endpoint (device ingress).
-// Set this to the hostname Modal prints after `modal deploy`, e.g.:
-//   "<user>--drone.modal.run"  (no scheme, no path)
-static const char* CLOUD_HOST = "tetracorp--drone.modal.run";
-static const uint16_t CLOUD_PORT = 443;
-static const char* CLOUD_PATH = "/ws/device/uplink";
+// VPS endpoint.
+static IPAddress VPS_IP(52, 53, 149, 188);
+static const uint16_t VPS_UDP_PORT = 6767;
+static const uint16_t LOCAL_UDP_PORT = 6767;
 
 // Set STA MAC address as requested.
 // static const uint8_t UPLINK_STA_MAC[6] = {0xf4, 0x4e, 0xb4, 0xa6, 0x58, 0xeb};
@@ -41,9 +39,9 @@ static const uint32_t SERIAL_BAUD = 921600;
 static const uint32_t NET_DIAG_EVERY_MS = 5000;
 static const uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
 
-// WebSocket throughput guardrails: keep lwIP stable under load.
-static const uint32_t WS_SEND_MAX_PER_LOOP = 8;
-static const uint32_t WS_SEND_YIELD_MS = 2;
+// UDP throughput guardrails.
+static const uint32_t UDP_SEND_MAX_PER_LOOP = 8;
+static const uint32_t UDP_SEND_YIELD_MS = 2;
 
 // NOTE: portal automation + periodic HTTP probes were removed because they were triggering
 // lwIP asserts (`pbuf_free: p->ref > 0`) on ESP32 core 3.3.5. Keep this firmware focused
@@ -55,8 +53,7 @@ static volatile bool g_wifi_ok = false;
 static uint8_t g_spi_tx[SPI_XFER_BYTES];
 static uint8_t g_spi_rx[SPI_XFER_BYTES];
 
-static WebSocketsClient ws;
-static volatile bool g_ws_ok = false;
+static WiFiUDP udp;
 
 struct WsVideoChunk {
   uint16_t len;
@@ -234,67 +231,70 @@ static void wifi_connect_loop() {
   }
 }
 
-static void ws_event(WStype_t type, uint8_t* payload, size_t length) {
-  switch (type) {
-    case WStype_CONNECTED:
-      g_ws_ok = true;
-      Serial.printf("[WS] connected\n");
-      break;
-    case WStype_DISCONNECTED:
-      g_ws_ok = false;
-      Serial.println("[WS] disconnected");
-      break;
-    case WStype_BIN: {
-      if (!payload || length < 1) break;
-      uint8_t typ = payload[0];
-      if (!(typ == 0x10 || typ == 0x11 || typ == 0x12)) break;
-      uint16_t len = (uint16_t)(length - 1);
-      if (len > sizeof(g_cmd_pay)) len = sizeof(g_cmd_pay);
-      g_cmd_type = typ;
-      g_cmd_len = len;
-      if (len) memcpy((void*)g_cmd_pay, payload + 1, len);
-      g_cmd_pending = true;
-      g_cmd_last_typ = typ;
-      g_cmd_rx_n++;
-      break;
+static void udp_rx_task(void*) {
+  uint8_t buf[256];
+  while (true) {
+    if (!g_wifi_ok || WiFi.status() != WL_CONNECTED) {
+      vTaskDelay(pdMS_TO_TICKS(50));
+      continue;
     }
-    default:
-      break;
+    int n = udp.parsePacket();
+    if (n <= 0) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+      continue;
+    }
+    if (n > (int)sizeof(buf)) n = sizeof(buf);
+    int r = udp.read(buf, n);
+    if (r <= 0) continue;
+
+    uint8_t typ = buf[0];
+    if (!(typ == 0x10 || typ == 0x11 || typ == 0x12)) continue;
+    uint16_t len = (uint16_t)(r - 1);
+    if (len > sizeof(g_cmd_pay)) len = sizeof(g_cmd_pay);
+    g_cmd_type = typ;
+    g_cmd_len = len;
+    if (len) memcpy((void*)g_cmd_pay, buf + 1, len);
+    g_cmd_pending = true;
+    g_cmd_last_typ = typ;
+    g_cmd_rx_n++;
   }
 }
 
-static void ws_task(void*) {
-  ws.beginSSL(CLOUD_HOST, CLOUD_PORT, CLOUD_PATH);
-  ws.onEvent(ws_event);
-  ws.setReconnectInterval(2000);
-  // Heartbeats have caused instability on some ESP32 core/lwIP combos; keep it off.
-  // If you need keepalive, rely on TCP keepalive + app-level traffic.
-
+static void udp_tx_task(void*) {
   static uint8_t out[1 + 1500];
+  uint32_t last_keepalive = 0;
 
   while (true) {
     if (!g_wifi_ok || WiFi.status() != WL_CONNECTED) {
-      g_ws_ok = false;
       vTaskDelay(pdMS_TO_TICKS(200));
       continue;
     }
 
-    ws.loop();
-
-    if (g_ws_ok && g_ws_video_q != nullptr) {
+    uint32_t sent = 0;
+    if (g_ws_video_q != nullptr) {
       WsVideoChunk c;
-      uint32_t sent = 0;
-      while (sent < WS_SEND_MAX_PER_LOOP && xQueueReceive(g_ws_video_q, &c, 0) == pdTRUE) {
+      while (sent < UDP_SEND_MAX_PER_LOOP && xQueueReceive(g_ws_video_q, &c, 0) == pdTRUE) {
         uint16_t n = c.len;
         if (n > sizeof(c.data)) n = sizeof(c.data);
-        out[0] = 0x02;  // device video chunk (Modal protocol)
+        out[0] = 0x02;  // video chunk
         memcpy(out + 1, c.data, n);
-        ws.sendBIN(out, (size_t)(1 + n));
-        ws.loop();
+        udp.beginPacket(VPS_IP, VPS_UDP_PORT);
+        udp.write(out, (size_t)(1 + n));
+        udp.endPacket();
         sent++;
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(WS_SEND_YIELD_MS));
+
+    uint32_t now = millis();
+    if (sent == 0 && (now - last_keepalive) > 1000) {
+      uint8_t ka = 0x03;
+      udp.beginPacket(VPS_IP, VPS_UDP_PORT);
+      udp.write(&ka, 1);
+      udp.endPacket();
+      last_keepalive = now;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(UDP_SEND_YIELD_MS));
   }
 }
 
@@ -305,10 +305,10 @@ static void diag_task(void*) {
       continue;
     }
 
-    Serial.printf("[STAT] ip=%s rssi=%d ws=%d q=%u heap=%u cmd_rx=%lu last=%02x\n",
+    Serial.printf("[STAT] ip=%s rssi=%d udp_local=%u q=%u heap=%u cmd_rx=%lu last=%02x\n",
                   WiFi.localIP().toString().c_str(),
                   WiFi.RSSI(),
-                  (int)g_ws_ok,
+                  (unsigned)LOCAL_UDP_PORT,
                   (unsigned)(g_ws_video_q ? uxQueueMessagesWaiting(g_ws_video_q) : 0),
                   (unsigned)ESP.getFreeHeap(),
                   (unsigned long)g_cmd_rx_n,
@@ -385,10 +385,12 @@ void setup() {
   xTaskCreatePinnedToCore(led_task, "led", 2048, nullptr, 1, nullptr, 1);
 
   wifi_connect_loop();
-  Serial.printf("[WS] target wss://%s%s\n", CLOUD_HOST, CLOUD_PATH);
+  udp.begin(LOCAL_UDP_PORT);
+  Serial.printf("[UDP] target %s:%u local=%u\n", VPS_IP.toString().c_str(), VPS_UDP_PORT, LOCAL_UDP_PORT);
 
   g_ws_video_q = xQueueCreate(24, sizeof(WsVideoChunk));
-  xTaskCreatePinnedToCore(ws_task, "ws", 8192, nullptr, 3, nullptr, 0);
+  xTaskCreatePinnedToCore(udp_rx_task, "udp_rx", 4096, nullptr, 2, nullptr, 0);
+  xTaskCreatePinnedToCore(udp_tx_task, "udp_tx", 4096, nullptr, 3, nullptr, 0);
   xTaskCreatePinnedToCore(diag_task, "diag", 4096, nullptr, 1, nullptr, 0);
   xTaskCreatePinnedToCore(spi_poll_task, "spi_poll", 4096, nullptr, 3, nullptr, 1);
 }

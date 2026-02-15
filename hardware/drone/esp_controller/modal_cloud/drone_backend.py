@@ -102,7 +102,9 @@ MSG_DEV_VCHUNK = 0x02
 
 
 # Single container: UI + device must hit the same in-memory STATE, otherwise commands/video vanish.
-@app.function(image=image, keep_warm=1, concurrency_limit=1, allow_concurrent_inputs=100)
+# But we still need concurrency within that container because WebSockets are long-lived.
+@app.function(image=image, min_containers=1, max_containers=1)
+@modal.concurrent(max_inputs=200)
 @modal.asgi_app(label=WEB_LABEL)
 def web_app():
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
