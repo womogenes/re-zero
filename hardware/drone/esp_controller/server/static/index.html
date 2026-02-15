@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ESP Drone Control</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font: 14px/1.4 system-ui, sans-serif;
+      }
+      .wrap {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: 12px;
+        padding: 12px;
+      }
+      @media (max-width: 900px) {
+        .wrap {
+          grid-template-columns: 1fr;
+        }
+      }
+      video {
+        width: 100%;
+        background: #000;
+      }
+      .box {
+        border: 1px solid #ddd;
+        padding: 10px;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      button {
+        padding: 8px 10px;
+        margin-right: 8px;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="box">
+        <div class="mono" id="status">connecting...</div>
+        <video id="v" autoplay playsinline muted></video>
+      </div>
+      <div class="box">
+        <div>Keys:</div>
+        <div class="mono">WASD = strafe/pitch</div>
+        <div class="mono">Arrows = throttle/yaw</div>
+        <div class="mono">Shift = takeoff, Ctrl = land</div>
+        <div class="mono">Alt = calibrate, Space = e-stop</div>
+        <button id="takeoff">takeoff</button>
+        <button id="land">land</button>
+        <button id="calib">calib</button>
+        <button id="estop">estop</button>
+      </div>
+    </div>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const videoEl = document.getElementById("v");
+
+      const NEUTRAL = 0x80;
+      const DELTA = 0x30;
+      const YAW_DELTA = 0x7f;
+
+      const pressed = new Set();
+      const MOVE_KEYS = new Set(["w","a","s","d","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
+
+      function clamp(x) { return Math.max(0, Math.min(255, x|0)); }
+
+      function buildCc(x, y, z, r, flags) {
+        const p = new Uint8Array(1 + 15);
+        p[0] = 0x10; // SET_CTRL
+        p[1] = 0x63; // 'c'
+        p[2] = 0x63; // 'c'
+        p[3] = 0x0a; // 0x000a LE
+        p[4] = 0x00;
+        p[5] = 0x00;
+        p[6] = 0x08; // 0x0008 LE
+        p[7] = 0x00;
+        p[8] = 0x66;
+        p[9] = x & 0xff;
+        p[10] = y & 0xff;
+        p[11] = z & 0xff;
+        p[12] = r & 0xff;
+        p[13] = flags & 0xff;
+        p[14] = (p[9] ^ p[10] ^ p[11] ^ p[12] ^ p[13]) & 0xff;
+        p[15] = 0x99;
+        return p;
+      }
+
+      function axesFromKeys() {
+        const dx = (pressed.has("d")?1:0) - (pressed.has("a")?1:0);
+        const dy = (pressed.has("s")?1:0) - (pressed.has("w")?1:0);
+        const dz = (pressed.has("ArrowUp")?1:0) - (pressed.has("ArrowDown")?1:0);
+        const dr = (pressed.has("ArrowRight")?1:0) - (pressed.has("ArrowLeft")?1:0);
+        const x = clamp(NEUTRAL + dx*DELTA);
+        const y = clamp(NEUTRAL + dy*DELTA); // flip in server if needed
+        const z = clamp(NEUTRAL + dz*DELTA);
+        const r = clamp(NEUTRAL + dr*YAW_DELTA);
+        return {x,y,z,r};
+      }
+
+      let dc = null;
+      function dcSendBytes(u8) {
+        if (!dc || dc.readyState !== "open") return;
+        dc.send(u8);
+      }
+
+      function tick() {
+        const {x,y,z,r} = axesFromKeys();
+        dcSendBytes(buildCc(x,y,z,r,0));
+      }
+
+      window.addEventListener("keydown", (e) => {
+        const k = e.key === " " ? "Space" : e.key;
+        if (MOVE_KEYS.has(k) || k === "Shift" || k === "Control" || k === "Alt" || k === "Space") e.preventDefault();
+        if (e.repeat) return;
+        pressed.add(k);
+        if (k === "Shift") dcSendBytes(new Uint8Array([0x11, 0x01, 0x5e, 0x01])); // 350ms
+        if (k === "Control") dcSendBytes(new Uint8Array([0x11, 0x02, 0x5e, 0x01])); // 350ms
+        if (k === "Alt") dcSendBytes(new Uint8Array([0x11, 0x10, 0xbc, 0x02])); // 700ms
+        if (k === "Space") dcSendBytes(new Uint8Array([0x11, 0x04, 0x5e, 0x01])); // 350ms
+      }, {passive:false});
+
+      window.addEventListener("keyup", (e) => {
+        const k = e.key === " " ? "Space" : e.key;
+        pressed.delete(k);
+      });
+
+      window.addEventListener("blur", () => { pressed.clear(); dcSendBytes(new Uint8Array([0x12])); });
+
+      document.getElementById("takeoff").onclick = () => dcSendBytes(new Uint8Array([0x11, 0x01, 0x5e, 0x01]));
+      document.getElementById("land").onclick = () => dcSendBytes(new Uint8Array([0x11, 0x02, 0x5e, 0x01]));
+      document.getElementById("calib").onclick = () => dcSendBytes(new Uint8Array([0x11, 0x10, 0xbc, 0x02]));
+      document.getElementById("estop").onclick = () => dcSendBytes(new Uint8Array([0x11, 0x04, 0x5e, 0x01]));
+
+      async function startWebRTC() {
+        const pc = new RTCPeerConnection();
+        dc = pc.createDataChannel("ctrl", {ordered:false, maxRetransmits:0});
+        dc.onopen = () => { statusEl.textContent = "webrtc + datachannel connected"; };
+        dc.onclose = () => { statusEl.textContent = "datachannel disconnected"; };
+        pc.addTransceiver("video", {direction:"recvonly"});
+        pc.ontrack = (ev) => { videoEl.srcObject = ev.streams[0]; };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const resp = await fetch("/webrtc/offer", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(pc.localDescription)});
+        const ans = await resp.json();
+        await pc.setRemoteDescription(ans);
+        statusEl.textContent = "webrtc connected (waiting for datachannel)";
+      }
+
+      setInterval(tick, 50); // 20 Hz control updates from browser -> server
+      startWebRTC();
+    </script>
+  </body>
+</html>

@@ -6,22 +6,20 @@
     <title>Drone Control</title>
     <style>
       :root {
-        --bg: #0b0f14;
-        --panel: #111825;
-        --text: #e6edf3;
-        --muted: #8aa0b6;
-        --accent: #7dd3fc;
-        --danger: #fb7185;
-        --ok: #34d399;
-        --border: rgba(255, 255, 255, 0.12);
+        --bg: #ffffff;
+        --panel: #ffffff;
+        --text: #1f2937;
+        --muted: #6b7280;
+        --accent: #b45309; /* amber, no blues */
+        --danger: #b91c1c;
+        --ok: #15803d;
+        --border: rgba(17, 24, 39, 0.14);
       }
       html,
       body {
         height: 100%;
         margin: 0;
-        background: radial-gradient(1200px 600px at 20% 0%, rgba(125, 211, 252, 0.12), transparent 60%),
-          radial-gradient(900px 500px at 80% 20%, rgba(52, 211, 153, 0.10), transparent 55%),
-          var(--bg);
+        background: var(--bg);
         color: var(--text);
         font: 14px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       }
@@ -39,10 +37,10 @@
         }
       }
       .card {
-        background: linear-gradient(180deg, rgba(17, 24, 37, 0.95), rgba(17, 24, 37, 0.85));
+        background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 14px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 20px 60px rgba(17, 24, 39, 0.12);
         overflow: hidden;
       }
       .card h2 {
@@ -57,7 +55,7 @@
       .video {
         position: relative;
         aspect-ratio: 16 / 9;
-        background: #000;
+        background: var(--panel);
       }
       .video img {
         width: 100%;
@@ -72,8 +70,8 @@
         top: 12px;
         padding: 10px 12px;
         border-radius: 12px;
-        background: rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid rgba(17, 24, 39, 0.16);
         backdrop-filter: blur(6px);
       }
       .row {
@@ -85,8 +83,8 @@
         width: 10px;
         height: 10px;
         border-radius: 999px;
-        background: #64748b;
-        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08) inset;
+        background: #9ca3af;
+        box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.08) inset;
       }
       .dot.ok {
         background: var(--ok);
@@ -110,14 +108,14 @@
         padding: 10px 10px;
         border-radius: 12px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.04);
+        background: rgba(17, 24, 39, 0.03);
         color: var(--muted);
         user-select: none;
       }
       .k.on {
-        border-color: rgba(125, 211, 252, 0.6);
+        border-color: rgba(180, 83, 9, 0.55);
         color: var(--text);
-        background: rgba(125, 211, 252, 0.12);
+        background: rgba(180, 83, 9, 0.10);
       }
       .btns {
         display: grid;
@@ -129,16 +127,16 @@
         padding: 10px 10px;
         border-radius: 12px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.05);
+        background: rgba(17, 24, 39, 0.03);
         color: var(--text);
         cursor: pointer;
       }
       button:hover {
-        border-color: rgba(255, 255, 255, 0.3);
+        border-color: rgba(17, 24, 39, 0.28);
       }
       button.danger {
-        border-color: rgba(251, 113, 133, 0.55);
-        background: rgba(251, 113, 133, 0.10);
+        border-color: rgba(185, 28, 28, 0.40);
+        background: rgba(185, 28, 28, 0.08);
       }
       .help {
         margin-top: 10px;
@@ -164,6 +162,9 @@
             <div class="mono" style="margin-top: 6px">
               keys: <span id="keys">none</span>
             </div>
+            <div class="mono" style="margin-top: 4px">
+              axes: <span id="axes">x=80 y=80 z=80 r=80</span>
+            </div>
           </div>
         </div>
       </div>
@@ -176,6 +177,7 @@
             <div><code>WASD</code> strafe/pitch</div>
             <div><code>ArrowUp/ArrowDown</code> throttle</div>
             <div><code>ArrowLeft/ArrowRight</code> yaw</div>
+            <div><code>Alt</code> gyro calibrate</div>
             <div><code>Shift</code> takeoff, <code>Ctrl</code> land</div>
             <div><code>Space</code> e-stop</div>
           </div>
@@ -203,6 +205,7 @@
       const dot = document.getElementById("dot");
       const statusEl = document.getElementById("status");
       const keysEl = document.getElementById("keys");
+      const axesEl = document.getElementById("axes");
       const keysGrid = document.getElementById("keysGrid");
 
       let ws = null;
@@ -214,7 +217,7 @@
       }
 
       function renderKeys() {
-        const items = ["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Shift", "Control", "Space"];
+        const items = ["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Alt", "Shift", "Control", "Space"];
         keysGrid.innerHTML = "";
         for (const k of items) {
           const el = document.createElement("div");
@@ -260,7 +263,16 @@
           setStatus(false, "ws error");
         };
         ws.onmessage = (ev) => {
-          if (typeof ev.data === "string") return;
+          if (typeof ev.data === "string") {
+            try {
+              const obj = JSON.parse(ev.data);
+              if (obj && obj.t === "axes") {
+                const hx = (n) => (Number(n) & 0xff).toString(16).padStart(2, "0");
+                axesEl.textContent = `x=${hx(obj.x)} y=${hx(obj.y)} z=${hx(obj.z)} r=${hx(obj.r)}`;
+              }
+            } catch {}
+            return;
+          }
           const buf = ev.data;
           if (!(buf instanceof ArrayBuffer)) return;
           const blob = new Blob([buf], { type: "image/jpeg" });
@@ -273,7 +285,7 @@
 
       function onKeyDown(e) {
         const k = e.key;
-        if (MOVE_KEYS.has(k) || k === "Shift" || k === "Control" || k === " ") {
+        if (MOVE_KEYS.has(k) || k === "Shift" || k === "Control" || k === "Alt" || k === " ") {
           e.preventDefault();
         }
         if (e.repeat) return;
@@ -294,6 +306,12 @@
           pressed.add("Control");
           renderKeys();
           send({ t: "action", a: "land" });
+          return;
+        }
+        if (k === "Alt") {
+          pressed.add("Alt");
+          renderKeys();
+          send({ t: "action", a: "calib" });
           return;
         }
 
@@ -330,4 +348,3 @@
     </script>
   </body>
 </html>
-
