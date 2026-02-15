@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-MX Brio Live Camera Demo - OpenCV approach.
+MX Brio Live Camera Demo - OpenCV + Morse + Zoom.
 Captures frames via cv2.VideoCapture, applies real-time effects,
-displays in OpenCV window. Keyboard controls for effects.
+Morse code LED, hardware/digital zoom. Keyboard controls.
 """
 
 import sys
@@ -12,12 +12,16 @@ import threading
 import numpy as np
 import cv2
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 log("Starting MX Brio Live Demo (OpenCV)...")
+
+from mx_brio_morse import MORSE, text_to_morse, morse_to_timeline, wpm_to_unit
 
 try:
     import hid
@@ -33,6 +37,14 @@ current_effect = "Normal"
 intensity = 1.0
 led_dev = None
 led_blinking = False
+zoom_level = 1.0        # 1.0 = no zoom, 4.0 = max
+hw_zoom = 100            # hardware zoom (100-400)
+hw_zoom_works = False     # whether CAP_PROP_ZOOM actually works
+morse_active = False
+morse_text = ""           # current Morse message
+morse_char = ""           # current character being sent
+morse_symbol = ""         # current dot/dash
+morse_led_on = False      # LED state for HUD indicator
 
 # ── Effect functions ─────────────────────────────────────────────
 
@@ -58,7 +70,7 @@ def fx_invert(frame, _):
     return cv2.bitwise_not(frame)
 
 def fx_contrast(frame, intensity):
-    alpha = 1.0 + intensity  # contrast multiplier
+    alpha = 1.0 + intensity
     return np.clip(alpha * frame.astype(np.float32) - 128 * (alpha - 1), 0, 255).astype(np.uint8)
 
 def fx_dark(frame, intensity):
@@ -91,7 +103,7 @@ def fx_pixelate(frame, intensity):
     return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
 
 def fx_blur(frame, intensity):
-    ksize = max(1, int(20 * intensity)) | 1  # must be odd
+    ksize = max(1, int(20 * intensity)) | 1
     return cv2.GaussianBlur(frame, (ksize, ksize), 0)
 
 def fx_edges(frame, intensity):
@@ -139,7 +151,89 @@ EFFECTS = {
     ord('s'): ("Sketch",        fx_sketch),
 }
 
-# ── LED ──────────────────────────────────────────────────────────
+# ── Morse LED (background thread) ───────────────────────────────
+
+def morse_send(text, wpm=12):
+    """Flash Morse code on LED in background. Updates HUD globals."""
+    global morse_active, morse_text, morse_char, morse_symbol, morse_led_on
+    if not led_dev:
+        log("  Morse: no LED device")
+        return
+    if morse_active:
+        log("  Morse: already sending")
+        return
+
+    morse_active = True
+    morse_text = text.upper()
+
+    def worker():
+        global morse_active, morse_char, morse_symbol, morse_led_on
+        unit = wpm_to_unit(wpm)
+        log(f"  Morse: \"{morse_text}\" @ {wpm}wpm (unit={unit*1000:.0f}ms)")
+
+        words = morse_text.split()
+        for wi, word in enumerate(words):
+            for ci, ch in enumerate(word):
+                if not morse_active:
+                    break
+                code = MORSE.get(ch, '')
+                if not code:
+                    continue
+                morse_char = ch
+                morse_symbol = code
+                log(f"    '{ch}' = {code}")
+
+                for si, sym in enumerate(code):
+                    if not morse_active:
+                        break
+                    dur = unit if sym == '.' else 3 * unit
+                    try:
+                        led_dev.write([0x08, 0x01])
+                    except:
+                        pass
+                    morse_led_on = True
+                    time.sleep(dur)
+                    try:
+                        led_dev.write([0x08, 0x00])
+                    except:
+                        pass
+                    morse_led_on = False
+                    # intra-character gap
+                    if si < len(code) - 1:
+                        time.sleep(unit)
+
+                # inter-character gap
+                if ci < len(word) - 1:
+                    time.sleep(3 * unit)
+
+            # word gap
+            if wi < len(words) - 1:
+                morse_char = " "
+                morse_symbol = ""
+                time.sleep(7 * unit)
+
+        morse_active = False
+        morse_char = ""
+        morse_symbol = ""
+        morse_led_on = False
+        log(f"  Morse: done")
+
+    threading.Thread(target=worker, daemon=True).start()
+
+# ── Digital zoom ─────────────────────────────────────────────────
+
+def apply_digital_zoom(frame, zoom):
+    """Crop center of frame by zoom factor and resize back."""
+    if zoom <= 1.01:
+        return frame
+    h, w = frame.shape[:2]
+    zh, zw = int(h / zoom), int(w / zoom)
+    y1 = (h - zh) // 2
+    x1 = (w - zw) // 2
+    cropped = frame[y1:y1+zh, x1:x1+zw]
+    return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+
+# ── LED toggle ───────────────────────────────────────────────────
 
 def toggle_led():
     global led_blinking
@@ -167,7 +261,6 @@ def toggle_led():
 
 def find_and_open_brio():
     """Find the MX Brio using AVFoundation name lookup, open with OpenCV."""
-    # Use AVFoundation to find correct index by name (no resolution probing)
     brio_idx = None
     try:
         import AVFoundation as AVF
@@ -186,8 +279,7 @@ def find_and_open_brio():
     else:
         log(f"  -> MX Brio at AVFoundation index {brio_idx}")
 
-    # Open with OpenCV - try the found index and nearby indices
-    for idx in [brio_idx, 1 - brio_idx]:  # try found index first, then the other
+    for idx in [brio_idx, 1 - brio_idx]:
         log(f"  Trying OpenCV index {idx}...")
         cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
         if not cap.isOpened():
@@ -197,7 +289,6 @@ def find_and_open_brio():
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, 30)
 
-        # Test if we can actually grab frames
         ok = False
         for attempt in range(20):
             ret, frame = cap.read()
@@ -208,33 +299,80 @@ def find_and_open_brio():
             time.sleep(0.15)
 
         if ok:
-            # Check if this looks like a 4K-capable camera (Brio)
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             is_brio = w >= 3840
-            # Set back to 720p
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             tag = "MX Brio (4K confirmed)" if is_brio else "MacBook camera"
             log(f"  [{idx}] identified as: {tag}")
             if is_brio:
                 return cap
-            # If not Brio, keep as fallback but try next index
             cap.release()
         else:
             log(f"  [{idx}] no frames after 20 attempts")
             cap.release()
 
-    # Last resort: just open whatever works
     log("  Fallback: opening first available camera")
     cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
     return cap if cap.isOpened() else None
+
+# ── HUD drawing ──────────────────────────────────────────────────
+
+def draw_hud(display, w, h, frame_count):
+    """Draw heads-up display overlay on frame."""
+    # Top bar: effect + zoom + frame
+    zoom_str = f"zoom={zoom_level:.1f}x"
+    if hw_zoom_works:
+        zoom_str += f" (HW:{hw_zoom})"
+    label = f"{current_effect} | {zoom_str} | {w}x{h} | #{frame_count}"
+    cv2.putText(display, label, (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
+
+    # Morse display (bottom)
+    if morse_active:
+        # LED indicator circle
+        color = (0, 255, 255) if morse_led_on else (80, 80, 80)  # yellow when on
+        cv2.circle(display, (30, h - 40), 15, color, -1)
+        cv2.circle(display, (30, h - 40), 15, (255, 255, 255), 2)
+
+        # Message + current char
+        morse_full = text_to_morse(morse_text)
+        cv2.putText(display, f"MORSE: {morse_text}", (55, h - 55),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        cv2.putText(display, f"  [{morse_char}] {morse_symbol}", (55, h - 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+
+        # Visual Morse code bar
+        bar_y = h - 15
+        bar_x = 55
+        for ch in morse_full:
+            if ch == '.':
+                cv2.rectangle(display, (bar_x, bar_y - 6), (bar_x + 8, bar_y + 6),
+                              (0, 255, 255), -1)
+                bar_x += 12
+            elif ch == '-':
+                cv2.rectangle(display, (bar_x, bar_y - 6), (bar_x + 24, bar_y + 6),
+                              (0, 255, 255), -1)
+                bar_x += 28
+            elif ch == '/':
+                bar_x += 10
+
+    # Zoom crosshair when zoomed
+    if zoom_level > 1.01:
+        cx, cy = w // 2, h // 2
+        cv2.line(display, (cx - 20, cy), (cx + 20, cy), (0, 255, 0), 1)
+        cv2.line(display, (cx, cy - 20), (cx, cy + 20), (0, 255, 0), 1)
+        cv2.circle(display, (cx, cy), 30, (0, 255, 0), 1)
+
+    return display
 
 # ── Main ─────────────────────────────────────────────────────────
 
 def main():
     global current_effect, intensity, led_dev, led_blinking
+    global zoom_level, hw_zoom, hw_zoom_works, morse_active
 
     log("Finding cameras...")
     cap = find_and_open_brio()
@@ -242,7 +380,6 @@ def main():
         log("FATAL: Cannot open camera")
         return
 
-    # Set to 1280x720
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     cap.set(cv2.CAP_PROP_FPS, 30)
@@ -252,7 +389,20 @@ def main():
     fps = cap.get(cv2.CAP_PROP_FPS)
     log(f"  Resolution: {w}x{h} @ {fps:.0f}fps")
 
-    # Quick warmup - drain any stale frames
+    # Test hardware zoom
+    cur_zoom = cap.get(cv2.CAP_PROP_ZOOM)
+    cap.set(cv2.CAP_PROP_ZOOM, 150)
+    new_zoom = cap.get(cv2.CAP_PROP_ZOOM)
+    if new_zoom != cur_zoom and new_zoom > 0:
+        hw_zoom_works = True
+        hw_zoom = int(new_zoom)
+        cap.set(cv2.CAP_PROP_ZOOM, 100)  # reset
+        hw_zoom = 100
+        log(f"  Hardware zoom: YES (100-400)")
+    else:
+        log(f"  Hardware zoom: NO (using digital)")
+    cap.set(cv2.CAP_PROP_ZOOM, 100)
+
     for _ in range(5):
         cap.read()
 
@@ -277,15 +427,17 @@ def main():
     frame_count = 0
 
     log("")
-    log("=" * 55)
-    log("  LIVE - Press keys in the video window:")
-    log("  1=Normal 2=Grayscale 3=Sepia 4=Invert")
-    log("  5=HiContrast 6=Dark 7=Bright 8=Saturate")
-    log("  9=HueShift 0=Pixelate b=Blur e=Edges")
-    log("  p=Posterize d=Desaturate t=Thermal")
-    log("  m=Emboss s=Sketch")
-    log("  +/-=Intensity  l=LED blink  q=Quit")
-    log("=" * 55)
+    log("=" * 60)
+    log("  LIVE - Keys (click video window first):")
+    log("  1-9,0 = Effects  b=Blur e=Edges p=Poster")
+    log("  d=Desat t=Thermal m=Emboss s=Sketch")
+    log("  +/- = Intensity")
+    log("  z/x = Zoom in/out   r = Reset zoom")
+    log("  h = Morse 'HELLO'   n = Morse 'SOS'")
+    log("  c = Morse custom (type in terminal)")
+    log("  l = LED blink toggle")
+    log("  q/ESC = Quit")
+    log("=" * 60)
     log("")
 
     try:
@@ -298,7 +450,13 @@ def main():
 
             frame_count += 1
 
-            # Apply current effect
+            # Apply zoom
+            if hw_zoom_works and hw_zoom > 100:
+                pass  # hardware zoom applied at capture level
+            else:
+                frame = apply_digital_zoom(frame, zoom_level)
+
+            # Apply effect
             try:
                 display = current_fn(frame, intensity)
             except Exception as e:
@@ -306,17 +464,14 @@ def main():
                     log(f"  Effect error: {e}")
                 display = frame
 
-            # HUD overlay
-            label = f"{current_effect} | intensity={intensity:.1f} | {w}x{h} | frame {frame_count}"
-            cv2.putText(display, label, (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            # HUD
+            display = draw_hud(display, w, h, frame_count)
 
             cv2.imshow(win_name, display)
 
-            # Key handling (1ms wait = ~1000fps cap, actual fps limited by camera)
             key = cv2.waitKey(1) & 0xFF
 
-            if key == ord('q') or key == 27:  # q or ESC
+            if key == ord('q') or key == 27:
                 log("Quit")
                 break
             elif key in EFFECTS:
@@ -328,15 +483,70 @@ def main():
             elif key == ord('-'):
                 intensity = max(intensity - 0.2, 0.2)
                 log(f"  Intensity: {intensity:.1f}")
+
+            # Zoom
+            elif key == ord('z'):
+                if hw_zoom_works:
+                    hw_zoom = min(hw_zoom + 50, 400)
+                    cap.set(cv2.CAP_PROP_ZOOM, hw_zoom)
+                    log(f"  Zoom: HW {hw_zoom}")
+                    zoom_level = hw_zoom / 100.0
+                else:
+                    zoom_level = min(zoom_level + 0.5, 4.0)
+                    log(f"  Zoom: {zoom_level:.1f}x (digital)")
+            elif key == ord('x'):
+                if hw_zoom_works:
+                    hw_zoom = max(hw_zoom - 50, 100)
+                    cap.set(cv2.CAP_PROP_ZOOM, hw_zoom)
+                    log(f"  Zoom: HW {hw_zoom}")
+                    zoom_level = hw_zoom / 100.0
+                else:
+                    zoom_level = max(zoom_level - 0.5, 1.0)
+                    log(f"  Zoom: {zoom_level:.1f}x (digital)")
+            elif key == ord('r'):
+                zoom_level = 1.0
+                hw_zoom = 100
+                if hw_zoom_works:
+                    cap.set(cv2.CAP_PROP_ZOOM, 100)
+                log("  Zoom: reset to 1.0x")
+
+            # Morse
+            elif key == ord('h'):
+                morse_send("HELLO", wpm=12)
+            elif key == ord('n'):
+                morse_send("SOS", wpm=12)
+            elif key == ord('c'):
+                # Read from terminal (won't block video since we check in next iteration)
+                log("  Type Morse message in terminal and press Enter:")
+                morse_active = False  # stop any current
+                def read_and_send():
+                    try:
+                        msg = input("  > ")
+                        if msg.strip():
+                            morse_send(msg.strip(), wpm=12)
+                    except:
+                        pass
+                threading.Thread(target=read_and_send, daemon=True).start()
+
             elif key == ord('l'):
-                toggle_led()
-            elif key != 255:  # 255 = no key pressed
+                if morse_active:
+                    morse_active = False
+                    try:
+                        led_dev.write([0x08, 0x00])
+                    except:
+                        pass
+                    log("  Morse: stopped")
+                else:
+                    toggle_led()
+
+            elif key != 255:
                 log(f"  Unknown key: {key} ('{chr(key) if 32 <= key < 127 else '?'}')")
 
     except KeyboardInterrupt:
         log("Interrupted")
     finally:
         log("Cleaning up...")
+        morse_active = False
         cap.release()
         cv2.destroyAllWindows()
         led_blinking = False
