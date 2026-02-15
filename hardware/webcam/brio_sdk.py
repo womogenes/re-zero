@@ -335,15 +335,17 @@ class Brio:
 
     # ── Morse ────────────────────────────────────────────────────
 
-    def morse(self, text, wpm=12, blocking=False, pause_camera=False):
+    def morse(self, text, wpm=8, blocking=False, pause_camera=False, dash_weight=5):
         """Flash Morse code on LED. Non-blocking by default.
+        wpm: words per minute (lower = slower, default 8 for visible LED).
+        dash_weight: how many units a dash lasts (ITU=3, default 5 for clarity).
         pause_camera=True releases the camera during flash so firmware
         doesn't force the LED on as a 'camera active' indicator.
         """
         self.led_stop()
         self._morse_active = True
         morse_str = text_to_morse(text)
-        timeline = morse_to_timeline(morse_str, wpm_to_unit(wpm))
+        timeline = morse_to_timeline(morse_str, wpm_to_unit(wpm), dash_weight=dash_weight)
 
         def worker():
             # Release camera so firmware LED indicator is off

@@ -204,7 +204,7 @@ def main():
                     morse_str = text_to_morse(msg)
                     print(f"Morse: {msg} -> {morse_str}")
                     set_status(msg, 30)
-                    cam.morse(msg, wpm=12, pause_camera=True)
+                    cam.morse(msg, pause_camera=True)
                 typing_mode = False
                 typed_text = ""
             elif key == 8 or key == 127:  # Backspace
@@ -244,12 +244,12 @@ def main():
         elif key == ord('h'):
             set_status("HELLO", 15)
             print(f"Morse: HELLO -> {text_to_morse('HELLO')}")
-            cam.morse("HELLO", wpm=12, pause_camera=True)
+            cam.morse("HELLO", pause_camera=True)
 
         elif key == ord('n'):
             set_status("SOS", 15)
             print(f"Morse: SOS -> {text_to_morse('SOS')}")
-            cam.morse("SOS", wpm=15, pause_camera=True)
+            cam.morse("SOS", pause_camera=True)
 
         elif key == ord('m'):
             typing_mode = True

@@ -75,8 +75,10 @@ def text_to_morse(text):
     return '//'.join(coded_words)
 
 
-def morse_to_timeline(morse_str, unit_s):
-    """Convert Morse string to list of (on: bool, duration_s) tuples."""
+def morse_to_timeline(morse_str, unit_s, dash_weight=3):
+    """Convert Morse string to list of (on: bool, duration_s) tuples.
+    dash_weight: dash = dash_weight * unit_s (ITU standard = 3, use 5+ for demos).
+    """
     timeline = []
     i = 0
     while i < len(morse_str):
@@ -87,7 +89,7 @@ def morse_to_timeline(morse_str, unit_s):
             if i + 1 < len(morse_str) and morse_str[i + 1] in '.-':
                 timeline.append((False, unit_s))
         elif ch == '-':
-            timeline.append((True, 3 * unit_s))      # dash ON
+            timeline.append((True, dash_weight * unit_s))  # dash ON
             if i + 1 < len(morse_str) and morse_str[i + 1] in '.-':
                 timeline.append((False, unit_s))
         elif ch == '/':
