@@ -174,7 +174,7 @@ function SharedActionItem({ action }: { action: Action }) {
             {ts("/30")}
           </button>
         </CollapsibleTrigger>
-        {input && (
+        {!!input && (
           <CollapsibleContent>
             <pre className="ml-8 mr-2 mb-1 text-xs text-muted-foreground/50 overflow-x-auto max-h-40 whitespace-pre-wrap">
               {JSON.stringify(input, null, 2)}
