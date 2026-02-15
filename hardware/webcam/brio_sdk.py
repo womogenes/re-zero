@@ -117,6 +117,8 @@ class Brio:
         self._led_stop = False
         self._morse_active = False
         self._mic_idx = None
+        self._recorder = None
+        self._recording = False
         if auto_open:
             self.open()
 
@@ -128,6 +130,7 @@ class Brio:
         self._find_mic()
 
     def close(self):
+        self.record_stop()
         self.led_stop()
         if self._hid:
             try:
@@ -240,6 +243,35 @@ class Brio:
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
 
+    # ── Video recording ───────────────────────────────────────────
+
+    def record_start(self, path="/tmp/brio_recording.mp4", fps=30, codec="mp4v"):
+        """Start recording video to file. Call capture() in a loop to feed frames."""
+        if self._recording:
+            self.record_stop()
+        w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH)) if self._cap else 1280
+        h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) if self._cap else 720
+        fourcc = cv2.VideoWriter_fourcc(*codec)
+        self._recorder = cv2.VideoWriter(path, fourcc, fps, (w, h))
+        self._recording = True
+        self._record_path = path
+        return path
+
+    def record_frame(self, frame):
+        """Write a frame to the recording. Returns True if recording."""
+        if self._recording and self._recorder and frame is not None:
+            self._recorder.write(frame)
+            return True
+        return False
+
+    def record_stop(self):
+        """Stop recording and finalize the file."""
+        self._recording = False
+        if self._recorder:
+            self._recorder.release()
+            self._recorder = None
+        return getattr(self, '_record_path', None)
+
     # ── Effects ──────────────────────────────────────────────────
 
     def effect(self, name="normal", intensity=None):
@@ -264,9 +296,8 @@ class Brio:
         if self._hid:
             try:
                 self._hid.write([0x08, 0x01 if on else 0x00])
-            except Exception as e:
-                import sys
-                print(f"[LED] write FAILED: {e}", file=sys.stderr)
+            except:
+                pass
 
     def led(self, on=True):
         self.led_stop()
