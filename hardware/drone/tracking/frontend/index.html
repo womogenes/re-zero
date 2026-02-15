@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Tracker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .header {
+            padding: 12px 20px;
+            border-bottom: 1px solid #222;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 { font-size: 15px; font-weight: 600; color: #fff; }
+        .badges { display: flex; gap: 8px; font-size: 11px; }
+        .badge {
+            padding: 3px 10px;
+            border-radius: 10px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+        }
+        .badge.ok { border-color: #22c55e; color: #22c55e; }
+        .badge.stream { border-color: #3b82f6; color: #3b82f6; }
+        .badge.calib { border-color: #f59e0b; color: #f59e0b; }
+
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            height: calc(100vh - 49px);
+        }
+        .left {
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            gap: 10px;
+        }
+        .video-wrap {
+            flex: 0 0 auto;
+            position: relative;
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: 360px;
+        }
+        .video-wrap video {
+            width: 100%; height: 100%; object-fit: contain; display: block;
+        }
+        .video-wrap canvas { display: none; }
+        .video-tag {
+            position: absolute; top: 6px; left: 8px;
+            font-size: 10px; color: #666;
+            background: rgba(0,0,0,0.7); padding: 2px 6px; border-radius: 3px;
+        }
+        .depth-tag {
+            position: absolute; top: 6px; right: 8px;
+            font-size: 10px;
+            background: rgba(0,0,0,0.7); padding: 2px 6px; border-radius: 3px;
+        }
+        .depth-tag.d3 { color: #22c55e; }
+        .depth-tag.d2 { color: #f59e0b; }
+        .chart-area {
+            flex: 1;
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 8px;
+            position: relative;
+            min-height: 180px;
+        }
+        .chart-area canvas { display: block; width: 100%; height: 100%; }
+        .chart-legend {
+            position: absolute; top: 6px; right: 8px;
+            display: flex; gap: 8px; font-size: 10px;
+        }
+
+        .sidebar {
+            border-left: 1px solid #222;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        .section {
+            padding: 14px;
+            border-bottom: 1px solid #222;
+        }
+        .section h2 {
+            font-size: 11px; font-weight: 600; color: #666;
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;
+        }
+        .coord-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+        }
+        .coord-card {
+            background: #0d0d0d;
+            border: 1px solid #222;
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+        .coord-card .lbl { font-size: 10px; color: #555; }
+        .coord-card .unit { font-size: 8px; color: #444; margin-top: 2px; }
+        .coord-card .val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .coord-card.x .val { color: #ef4444; }
+        .coord-card.y .val { color: #22c55e; }
+        .coord-card.z .val { color: #3b82f6; }
+
+        .intrinsics-row {
+            display: flex; gap: 6px; margin-top: 8px; font-size: 10px; color: #555;
+            flex-wrap: wrap;
+        }
+        .intrinsics-row span { background: #111; padding: 2px 6px; border-radius: 3px; }
+
+        .controls {
+            display: flex; gap: 8px; padding: 14px;
+            border-bottom: 1px solid #222;
+        }
+        .controls button {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            font-family: inherit;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .controls button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .controls button.go { background: #1d4ed8; border-color: #2563eb; color: #fff; }
+        .controls button.stop { border-color: #dc2626; color: #dc2626; }
+
+        .calib-section {
+            padding: 14px;
+            border-bottom: 1px solid #222;
+        }
+        .calib-section h2 {
+            font-size: 11px; font-weight: 600; color: #666;
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;
+        }
+        .calib-row {
+            display: flex; gap: 6px; margin-bottom: 8px; align-items: center;
+        }
+        .calib-row label {
+            font-size: 11px; color: #888; min-width: 55px;
+        }
+        .calib-row select, .calib-row input {
+            flex: 1;
+            padding: 6px 8px;
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        .calib-row input { width: 70px; }
+        .calib-btns {
+            display: flex; gap: 6px; margin-top: 6px;
+        }
+        .calib-btns button {
+            flex: 1;
+            padding: 7px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .calib-btns button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .calib-btns button.calib-go { border-color: #f59e0b; color: #f59e0b; }
+        .calib-result {
+            font-size: 10px; color: #22c55e; margin-top: 6px; display: none;
+        }
+
+        .log-area {
+            flex: 1;
+            padding: 14px;
+            overflow-y: auto;
+            font-size: 11px;
+            color: #444;
+            line-height: 1.5;
+        }
+        .log-area h2 {
+            font-size: 11px; font-weight: 600; color: #666;
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;
+        }
+
+        @media (max-width: 768px) {
+            .main { grid-template-columns: 1fr; height: auto; }
+            .sidebar { border-left: none; border-top: 1px solid #222; }
+            .video-wrap { max-height: 240px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Drone Tracker</h1>
+        <div class="badges">
+            <span class="badge" id="fpsBadge">-- fps</span>
+            <span class="badge" id="latBadge">--ms</span>
+            <span class="badge" id="statusBadge">off</span>
+        </div>
+    </div>
+    <div class="main">
+        <div class="left">
+            <div class="video-wrap">
+                <div class="video-tag">CAMERA</div>
+                <span class="depth-tag" id="depthTag"></span>
+                <video id="video" autoplay playsinline muted></video>
+                <canvas id="capture"></canvas>
+            </div>
+            <div class="chart-area" id="chartWrap">
+                <div class="chart-legend">
+                    <span style="color:#ef4444">X</span>
+                    <span style="color:#22c55e">Y</span>
+                    <span style="color:#3b82f6">Z</span>
+                    <span style="color:#555">(meters)</span>
+                </div>
+                <canvas id="chart"></canvas>
+            </div>
+        </div>
+        <div class="sidebar">
+            <div class="section">
+                <h2>Coordinates (meters)</h2>
+                <div class="coord-row">
+                    <div class="coord-card x"><div class="lbl">X</div><div class="val" id="cX">--</div><div class="unit">m</div></div>
+                    <div class="coord-card y"><div class="lbl">Y</div><div class="val" id="cY">--</div><div class="unit">m</div></div>
+                    <div class="coord-card z"><div class="lbl">Z</div><div class="val" id="cZ">--</div><div class="unit">m</div></div>
+                </div>
+                <div class="intrinsics-row" id="intrinsicsRow">
+                    <span id="fxDisp">fx: --</span>
+                    <span id="fyDisp">fy: --</span>
+                </div>
+            </div>
+            <div class="controls">
+                <button id="btnCamera" class="go">Start Camera</button>
+                <button id="btnStream" disabled>Stream to GPU</button>
+                <button id="btnStop" class="stop" disabled>Stop</button>
+            </div>
+            <div class="calib-section">
+                <h2>Calibration</h2>
+                <div class="calib-row">
+                    <label>Object</label>
+                    <select id="calibClass">
+                        <option value="cup">cup (8cm)</option>
+                        <option value="bottle">bottle (7cm)</option>
+                        <option value="cell phone">phone (7.5cm)</option>
+                        <option value="person">person (45cm)</option>
+                        <option value="laptop">laptop (35cm)</option>
+                        <option value="keyboard">keyboard (40cm)</option>
+                        <option value="book">book (15cm)</option>
+                        <option value="chair">chair (45cm)</option>
+                    </select>
+                </div>
+                <div class="calib-row">
+                    <label>Width</label>
+                    <input type="number" id="calibWidth" value="0.08" step="0.01" min="0.01"> m
+                </div>
+                <div class="calib-row">
+                    <label>Distance</label>
+                    <input type="number" id="calibDist" value="1.0" step="0.1" min="0.1"> m
+                </div>
+                <div class="calib-btns">
+                    <button id="btnCalib" class="calib-go" disabled>Calibrate</button>
+                    <button id="btnCalibCancel" disabled>Cancel</button>
+                </div>
+                <div class="calib-result" id="calibResult"></div>
+            </div>
+            <div class="log-area">
+                <h2>Log</h2>
+                <div id="log"></div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/app.js?v=5"></script>
+</body>
+</html>
