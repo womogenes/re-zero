@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ConvexClientProvider } from "@/components/convex-provider";
+import { AutumnWrapper } from "@/components/autumn-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -33,10 +34,12 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
           <ClerkProvider>
             <ConvexClientProvider>
-              <TooltipProvider>
-                {children}
-                <Toaster />
-              </TooltipProvider>
+              <AutumnWrapper>
+                <TooltipProvider>
+                  {children}
+                  <Toaster />
+                </TooltipProvider>
+              </AutumnWrapper>
             </ConvexClientProvider>
           </ClerkProvider>
         </ThemeProvider>

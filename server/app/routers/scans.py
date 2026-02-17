@@ -10,6 +10,7 @@ import modal
 from ..auth import AuthContext, require_api_key
 from ..config import settings
 from ..convex_client import convex_mutation, convex_query
+from ..lib.autumn import autumn_check, autumn_track
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,17 @@ async def launch_scan(
     auth: AuthContext = Depends(require_api_key),
 ):
     """All-in-one: find/create project, create scan, start Modal."""
+    # Check billing — requires payment method on file
+    if settings.autumn_secret_key and auth.clerk_id:
+        try:
+            check = await autumn_check(settings.autumn_secret_key, auth.clerk_id, "scan")
+            if not check.get("allowed"):
+                raise HTTPException(402, "Payment required. Set up billing at https://rezero.sh/billing")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Autumn check failed (allowing scan): {e}")
+
     # Validate: exactly one of repo_url or storage_id
     if not req.repo_url and not req.storage_id:
         raise HTTPException(400, "Either repo_url or storage_id is required")
@@ -267,5 +279,18 @@ async def submit_report(req: SubmitReportRequest):
         "scanId": req.scan_id,
         "status": "completed",
     })
+
+    # Track usage in Autumn for billing
+    if settings.autumn_secret_key:
+        try:
+            project_result = await convex_query("projects:get", {"projectId": req.project_id})
+            project = project_result.get("value", project_result) if isinstance(project_result, dict) else project_result
+            if project:
+                user_result = await convex_query("users:get", {"userId": project["userId"]})
+                user = user_result.get("value", user_result) if isinstance(user_result, dict) else user_result
+                if user and user.get("clerkId"):
+                    await autumn_track(settings.autumn_secret_key, user["clerkId"], "scan", 1)
+        except Exception as e:
+            logger.warning(f"Autumn track failed: {e}")
 
     return {"status": "submitted"}

@@ -31,6 +31,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 401) throw new Error("Invalid or expired API key. Run: rem login");
+    if (res.status === 402) throw new Error("Payment required. Set up billing at https://rezero.sh/billing");
     if (res.status === 403) throw new Error("Access denied: " + text);
     throw new Error(`Server error ${res.status}: ${text}`);
   }

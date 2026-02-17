@@ -13,7 +13,12 @@ export const validate = query({
       return { valid: false as const };
     }
 
-    return { valid: true as const, userId: apiKey.userId };
+    const userDoc = await ctx.db.get(apiKey.userId);
+    return {
+      valid: true as const,
+      userId: apiKey.userId,
+      clerkId: userDoc?.clerkId,
+    };
   },
 });
 

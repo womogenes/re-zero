@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AuthContext:
     """Result of successful authentication."""
-    user_id: str  # Convex user _id
+    user_id: str    # Convex user _id
+    clerk_id: str   # Clerk user ID (= Autumn customer_id)
 
 
 async def require_api_key(
@@ -37,4 +38,4 @@ async def require_api_key(
     except Exception:
         pass
 
-    return AuthContext(user_id=value["userId"])
+    return AuthContext(user_id=value["userId"], clerk_id=value.get("clerkId", ""))

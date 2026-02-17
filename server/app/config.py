@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     modal_token_id: str = ""
     modal_token_secret: str = ""
     frontend_url: str = "http://localhost:3000"
+    autumn_secret_key: str = ""
 
     model_config = {"env_file": ".env"}
 

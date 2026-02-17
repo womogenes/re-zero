@@ -40,6 +40,13 @@ export const getByClerkId = query({
   },
 });
 
+export const get = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
+  },
+});
+
 export const updateTheme = mutation({
   args: {
     clerkId: v.string(),

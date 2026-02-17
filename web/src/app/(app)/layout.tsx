@@ -16,6 +16,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/billing" className="text-xs text-muted-foreground hover:text-rem transition-colors duration-150">
+            billing
+          </Link>
           <Link href="/settings" className="text-xs text-muted-foreground hover:text-rem transition-colors duration-150">
             settings
           </Link>
