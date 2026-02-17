@@ -24,6 +24,12 @@ class StartScanRequest(BaseModel):
     agent: str
 
 
+class LaunchScanRequest(BaseModel):
+    repo_url: str
+    target_type: str = "oss"
+    agent: str = "opus"
+
+
 class AgentActionRequest(BaseModel):
     scan_id: str
     type: str  # tool_call | tool_result | reasoning | observation | report
@@ -122,6 +128,91 @@ async def start_scan(
 
     background_tasks.add_task(_launch_scan, req)
     return {"status": "started", "scan_id": req.scan_id}
+
+
+@router.post("/launch")
+async def launch_scan(
+    req: LaunchScanRequest,
+    background_tasks: BackgroundTasks,
+    auth: AuthContext = Depends(require_api_key),
+):
+    """All-in-one: find/create project, create scan, start Modal."""
+    # 1. Find or create project by repo URL
+    project_result = await convex_mutation("projects:findOrCreate", {
+        "userId": auth.user_id,
+        "repoUrl": req.repo_url,
+        "targetType": req.target_type,
+    })
+    project_id = project_result.get("value", project_result) if isinstance(project_result, dict) else project_result
+
+    # 2. Create scan
+    scan_result = await convex_mutation("scans:create", {
+        "projectId": project_id,
+        "agent": req.agent,
+    })
+    scan_id = scan_result.get("value", scan_result) if isinstance(scan_result, dict) else scan_result
+
+    # 3. Build target config and launch
+    if req.target_type == "oss":
+        target_config = {"repoUrl": req.repo_url}
+    else:
+        raise HTTPException(400, "Only 'oss' target type supported via CLI for now")
+
+    internal_req = StartScanRequest(
+        scan_id=scan_id,
+        project_id=project_id,
+        target_type=req.target_type,
+        target_config=target_config,
+        agent=req.agent,
+    )
+    background_tasks.add_task(_launch_scan, internal_req)
+
+    return {"scan_id": scan_id, "project_id": project_id}
+
+
+@router.get("/{scan_id}/poll")
+async def poll_scan(
+    scan_id: str,
+    after: float = 0,
+    auth: AuthContext = Depends(require_api_key),
+):
+    """Poll scan status, new actions, and report."""
+    scan_result = await convex_query("scans:get", {"scanId": scan_id})
+    scan = scan_result.get("value", scan_result) if isinstance(scan_result, dict) else scan_result
+    if not scan:
+        raise HTTPException(404, "Scan not found")
+
+    # Verify ownership through project
+    project_result = await convex_query("projects:get", {"projectId": scan["projectId"]})
+    project = project_result.get("value", project_result) if isinstance(project_result, dict) else project_result
+    if not project or project.get("userId") != auth.user_id:
+        raise HTTPException(403, "Not your scan")
+
+    # Get actions after timestamp
+    actions_result = await convex_query("actions:listByScanAfter", {
+        "scanId": scan_id,
+        "after": after,
+    })
+    actions = actions_result.get("value", actions_result) if isinstance(actions_result, dict) else actions_result
+
+    # Get report if completed
+    report = None
+    if scan.get("status") == "completed":
+        report_result = await convex_query("reports:getByScan", {"scanId": scan_id})
+        report = report_result.get("value", report_result) if isinstance(report_result, dict) else report_result
+
+    return {
+        "status": scan.get("status"),
+        "error": scan.get("error"),
+        "actions": actions or [],
+        "report": report,
+    }
+
+
+@router.post("/verify")
+async def verify_key(auth: AuthContext = Depends(require_api_key)):
+    """Verify an API key is valid."""
+    return {"valid": True, "user_id": auth.user_id}
 
 
 @router.post("/action")

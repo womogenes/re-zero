@@ -58,3 +58,41 @@ export const archive = mutation({
     await ctx.db.patch(args.projectId, { status: "archived" });
   },
 });
+
+export const findOrCreate = mutation({
+  args: {
+    userId: v.id("users"),
+    repoUrl: v.string(),
+    targetType: v.union(
+      v.literal("oss"),
+      v.literal("web"),
+      v.literal("hardware"),
+      v.literal("fpga")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("projects")
+      .withIndex("by_user_and_status", (q) =>
+        q.eq("userId", args.userId).eq("status", "active")
+      )
+      .collect();
+
+    const match = existing.find(
+      (p) => p.targetConfig?.repoUrl === args.repoUrl
+    );
+    if (match) return match._id;
+
+    const urlParts = args.repoUrl.replace(/\.git$/, "").split("/");
+    const name = urlParts.slice(-2).join("/");
+
+    return await ctx.db.insert("projects", {
+      userId: args.userId,
+      name,
+      targetType: args.targetType,
+      targetConfig: { repoUrl: args.repoUrl },
+      status: "active",
+      createdAt: Date.now(),
+    });
+  },
+});

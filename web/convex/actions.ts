@@ -12,6 +12,22 @@ export const listByScan = query({
   },
 });
 
+export const listByScanAfter = query({
+  args: {
+    scanId: v.id("scans"),
+    after: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("actions")
+      .withIndex("by_scan", (q) =>
+        q.eq("scanId", args.scanId).gt("timestamp", args.after)
+      )
+      .order("asc")
+      .collect();
+  },
+});
+
 export const push = mutation({
   args: {
     scanId: v.id("scans"),

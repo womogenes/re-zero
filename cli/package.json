@@ -1,0 +1,39 @@
+{
+  "name": "rem-scan",
+  "version": "0.1.0",
+  "description": "Re:Zero security scanner CLI",
+  "type": "module",
+  "bin": {
+    "rem": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.4.0",
+    "commander": "^13.0.0",
+    "ora": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0"
+  },
+  "keywords": [
+    "security",
+    "scanner",
+    "re-zero",
+    "vulnerability"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tetraslam/re-zero"
+  }
+}
