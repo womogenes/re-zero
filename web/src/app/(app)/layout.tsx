@@ -16,6 +16,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/settings" className="text-xs text-muted-foreground hover:text-rem transition-colors duration-150">
+            settings
+          </Link>
           <ThemeToggle />
           <UserButton appearance={{ elements: { avatarBox: "h-5 w-5" } }} />
         </div>

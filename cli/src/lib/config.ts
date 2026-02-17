@@ -5,7 +5,7 @@ import type { RemConfig } from "../types.js";
 
 const CONFIG_DIR = join(homedir(), ".rem");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
-const DEFAULT_SERVER = "http://localhost:8000";
+const DEFAULT_SERVER = "https://api.rezero.sh";
 
 export async function loadConfig(): Promise<RemConfig> {
   try {
