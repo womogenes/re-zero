@@ -59,31 +59,29 @@ function UsageGraph({ scans }: { scans: Array<{ tier?: string; status: string; s
           {totalMaid + totalOni} scans &middot; ${totalSpend}
         </span>
       </div>
-      <div className="flex items-end gap-px h-20">
+      <div className="flex items-end gap-px" style={{ height: 80 }}>
         {data.map((d, i) => {
           const total = d.maid + d.oni;
-          const h = total > 0 ? Math.max(4, (total / maxVal) * 100) : 0;
-          const oniPct = total > 0 ? (d.oni / total) * 100 : 0;
+          const barH = total > 0 ? Math.max(3, Math.round((total / maxVal) * 80)) : 0;
+          const oniH = total > 0 ? Math.round((d.oni / total) * barH) : 0;
+          const maidH = barH - oniH;
           return (
             <div
               key={i}
-              className="flex-1 flex flex-col justify-end group relative"
+              className="flex-1 flex flex-col justify-end group"
               title={`${d.date}: ${d.maid} maid, ${d.oni} oni`}
             >
               {total > 0 ? (
-                <div
-                  className="w-full transition-all duration-150 group-hover:opacity-80 overflow-hidden"
-                  style={{ height: `${h}%` }}
-                >
-                  {d.oni > 0 && (
-                    <div className="bg-rem w-full" style={{ height: `${oniPct}%` }} />
+                <div className="w-full transition-opacity duration-150 group-hover:opacity-70">
+                  {oniH > 0 && (
+                    <div className="bg-rem w-full" style={{ height: oniH }} />
                   )}
-                  {d.maid > 0 && (
-                    <div className="bg-rem/40 w-full flex-1" style={{ height: `${100 - oniPct}%` }} />
+                  {maidH > 0 && (
+                    <div className="bg-rem/40 w-full" style={{ height: maidH }} />
                   )}
                 </div>
               ) : (
-                <div className="w-full h-px bg-border/30" />
+                <div className="w-full bg-border/20" style={{ height: 1 }} />
               )}
             </div>
           );
