@@ -1,17 +1,21 @@
 "use client";
 
 import { useCustomer, CheckoutDialog } from "autumn-js/react";
-import { RemLoader } from "@/components/rem-spinner";
+import { useMinLoading } from "@/hooks/use-min-loading";
 
 const BILLING_URL = typeof window !== "undefined" ? `${window.location.origin}/billing` : "/billing";
 
 export default function BillingPage() {
   const { customer, checkout, openBillingPortal, isLoading } = useCustomer();
+  const minTime = useMinLoading();
 
-  if (isLoading) {
+  if (isLoading || !minTime) {
     return (
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        <RemLoader />
+      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
+        <div className="text-center">
+          <img src="/rem-running.gif" alt="Rem" className="w-16 h-16 mx-auto mb-3 object-contain" />
+          <p className="text-sm text-muted-foreground">Rem is loading billing...</p>
+        </div>
       </div>
     );
   }

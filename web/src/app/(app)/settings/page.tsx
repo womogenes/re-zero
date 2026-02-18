@@ -4,10 +4,11 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useState } from "react";
-import { RemLoader } from "@/components/rem-spinner";
+import { useMinLoading } from "@/hooks/use-min-loading";
 
 export default function SettingsPage() {
   const { user, isLoaded } = useCurrentUser();
+  const minTime = useMinLoading();
   const keys = useQuery(
     api.apiKeys.listByUser,
     user ? { userId: user._id } : "skip"
@@ -21,10 +22,13 @@ export default function SettingsPage() {
   const [copied, setCopied] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  if (!isLoaded) {
+  if (!isLoaded || !minTime) {
     return (
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        <RemLoader />
+      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
+        <div className="text-center">
+          <img src="/rem-running.gif" alt="Rem" className="w-16 h-16 mx-auto mb-3 object-contain" />
+          <p className="text-sm text-muted-foreground">Rem is loading settings...</p>
+        </div>
       </div>
     );
   }
