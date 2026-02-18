@@ -2,6 +2,8 @@
 
 import { useCustomer, CheckoutDialog } from "autumn-js/react";
 
+const BILLING_URL = typeof window !== "undefined" ? `${window.location.origin}/billing` : "/billing";
+
 export default function BillingPage() {
   const { customer, checkout, openBillingPortal, isLoading } = useCustomer();
 
@@ -57,6 +59,7 @@ export default function BillingPage() {
               onClick={() =>
                 checkout({
                   productId: "pay-as-you-go",
+                  successUrl: BILLING_URL,
                   dialog: CheckoutDialog,
                 })
               }
@@ -81,6 +84,7 @@ export default function BillingPage() {
               onClick={() =>
                 checkout({
                   productId: "standard-pack",
+                  successUrl: BILLING_URL,
                   dialog: CheckoutDialog,
                 })
               }
@@ -95,6 +99,7 @@ export default function BillingPage() {
               onClick={() =>
                 checkout({
                   productId: "bulk-pack",
+                  successUrl: BILLING_URL,
                   dialog: CheckoutDialog,
                 })
               }
