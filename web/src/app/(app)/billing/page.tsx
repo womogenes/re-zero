@@ -5,12 +5,15 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMinLoading } from "@/hooks/use-min-loading";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 const BILLING_URL = typeof window !== "undefined" ? `${window.location.origin}/billing` : "/billing";
 
 // Build last 30 days of usage data from scan records
 function UsageGraph({ scans }: { scans: Array<{ tier?: string; status: string; startedAt: number }> }) {
+  const [hover, setHover] = useState<{ date: string; maid: number; oni: number } | null>(null);
+  const GRAPH_H = 104;
+
   const data = useMemo(() => {
     const now = Date.now();
     const days = 30;
@@ -25,7 +28,6 @@ function UsageGraph({ scans }: { scans: Array<{ tier?: string; status: string; s
       });
     }
 
-    // Only count completed scans (pay-as-you-go = completed scans)
     for (const scan of scans) {
       if (scan.status !== "completed") continue;
       const dayIndex = days - 1 - Math.floor((now - scan.startedAt) / 86400000);
@@ -43,6 +45,9 @@ function UsageGraph({ scans }: { scans: Array<{ tier?: string; status: string; s
   const totalOni = data.reduce((s, d) => s + d.oni, 0);
   const totalSpend = totalMaid * 25 + totalOni * 45;
 
+  const legendInfo = hover ?? { date: "total", maid: totalMaid, oni: totalOni };
+  const legendSpend = legendInfo.date === "total" ? totalSpend : legendInfo.maid * 25 + legendInfo.oni * 45;
+
   return (
     <div>
       <div className="flex items-baseline justify-between mb-4">
@@ -55,21 +60,30 @@ function UsageGraph({ scans }: { scans: Array<{ tier?: string; status: string; s
             <span className="inline-block w-2 h-2 bg-rem" /> oni
           </span>
         </div>
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {totalMaid + totalOni} scans &middot; ${totalSpend}
+        {/* Hover legend — fixed position, updates on hover */}
+        <span className="text-xs tabular-nums text-muted-foreground transition-opacity duration-100">
+          {hover ? (
+            <>{hover.date} &middot; {hover.maid} maid, {hover.oni} oni &middot; ${legendSpend}</>
+          ) : (
+            <>{totalMaid + totalOni} scans &middot; ${totalSpend}</>
+          )}
         </span>
       </div>
-      <div className="flex items-end gap-px" style={{ height: 80 }}>
+      <div
+        className="flex items-end gap-px"
+        style={{ height: GRAPH_H }}
+        onMouseLeave={() => setHover(null)}
+      >
         {data.map((d, i) => {
           const total = d.maid + d.oni;
-          const barH = total > 0 ? Math.max(3, Math.round((total / maxVal) * 80)) : 0;
+          const barH = total > 0 ? Math.max(3, Math.round((total / maxVal) * GRAPH_H)) : 0;
           const oniH = total > 0 ? Math.round((d.oni / total) * barH) : 0;
           const maidH = barH - oniH;
           return (
             <div
               key={i}
               className="flex-1 flex flex-col justify-end group"
-              title={`${d.date}: ${d.maid} maid, ${d.oni} oni`}
+              onMouseEnter={() => setHover(d)}
             >
               {total > 0 ? (
                 <div className="w-full transition-opacity duration-150 group-hover:opacity-70">

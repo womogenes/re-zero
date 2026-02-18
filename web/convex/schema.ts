@@ -8,6 +8,7 @@ export default defineSchema({
     name: v.string(),
     imageUrl: v.optional(v.string()),
     theme: v.optional(v.union(v.literal("light"), v.literal("dark"))),
+    defaultTier: v.optional(v.union(v.literal("maid"), v.literal("oni"))),
   }).index("by_clerk_id", ["clerkId"]),
 
   projects: defineTable({

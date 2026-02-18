@@ -9,6 +9,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { useApiKey } from "@/hooks/use-api-key";
 import { useCustomer } from "autumn-js/react";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { TIER_CONFIG, DEFAULT_TIER, getScanLabel, getScanShort, type Tier } from "@/lib/scan-tiers";
 
 function SeverityBar({ findings }: { findings: Array<{ severity: string }> }) {
@@ -46,7 +47,9 @@ export default function ProjectPage() {
   const apiKey = useApiKey();
 
   const { customer } = useCustomer();
+  const { user: currentUser } = useCurrentUser();
   const [starting, setStarting] = useState(false);
+  const [tierInitialized, setTierInitialized] = useState(false);
   const [selectedTier, setSelectedTier] = useState<Tier>(DEFAULT_TIER);
   const [selectedModel, setSelectedModel] = useState<string>(TIER_CONFIG[DEFAULT_TIER].defaultModel);
   const [showDeploy, setShowDeploy] = useState(false);
@@ -55,6 +58,18 @@ export default function ProjectPage() {
 
   // Prepaid scan balance from Autumn
   const maidBalance = (customer?.features as any)?.standard_scan?.balance ?? 0;
+
+  // Initialize tier from user preference (once)
+  useEffect(() => {
+    if (!tierInitialized && currentUser?.defaultTier) {
+      const t = currentUser.defaultTier as Tier;
+      setSelectedTier(t);
+      setSelectedModel(TIER_CONFIG[t].defaultModel);
+      setTierInitialized(true);
+    } else if (!tierInitialized && currentUser) {
+      setTierInitialized(true);
+    }
+  }, [currentUser, tierInitialized]);
 
   // Close deploy dropdown on outside click
   useEffect(() => {
@@ -228,22 +243,42 @@ export default function ProjectPage() {
               {maidBalance} {maidBalance === 1 ? "scan" : "scans"} remaining
             </span>
           )}
+          {/* Mode indicator */}
+          <span className={`text-[10px] tracking-wider px-1.5 py-0.5 transition-all duration-150 select-none ${
+            selectedTier === "oni"
+              ? "bg-rem text-white"
+              : "border border-rem/20 text-rem/50"
+          }`}>
+            {TIER_CONFIG[selectedTier].label.toUpperCase()}
+          </span>
           <div className="relative" ref={deployRef}>
-            <div className="flex items-center">
+            <div className={`flex items-stretch transition-shadow duration-300 ${
+              selectedTier === "oni" ? "shadow-[0_0_16px_-4px] shadow-rem/30" : ""
+            }`}>
               <button
                 onClick={handleStartScan}
                 disabled={starting}
-                className="text-xs border border-rem/30 text-rem/70 px-2.5 py-1.5 hover:bg-rem/10 hover:border-rem hover:text-rem transition-all duration-100 disabled:opacity-30 active:translate-y-px border-r-0"
+                className={`text-xs px-2.5 flex items-center transition-all duration-100 disabled:opacity-30 active:translate-y-px border-r-0 ${
+                  selectedTier === "oni"
+                    ? "border border-rem text-rem hover:bg-rem/15"
+                    : "border border-rem/30 text-rem/70 hover:bg-rem/10 hover:border-rem hover:text-rem"
+                }`}
+                style={{ paddingTop: 6, paddingBottom: 6 }}
               >
                 + Deploy Rem
               </button>
               <button
                 onClick={() => setShowDeploy(!showDeploy)}
-                className={`text-xs border border-rem/30 px-1.5 py-1.5 transition-all duration-100 active:translate-y-px ${
-                  showDeploy
-                    ? "bg-rem/10 text-rem border-rem"
-                    : "text-rem/70 hover:bg-rem/10 hover:border-rem hover:text-rem"
+                className={`text-xs flex items-center justify-center transition-all duration-100 active:translate-y-px ${
+                  selectedTier === "oni"
+                    ? showDeploy
+                      ? "border border-rem bg-rem/15 text-rem"
+                      : "border border-rem text-rem hover:bg-rem/15"
+                    : showDeploy
+                      ? "border border-rem bg-rem/10 text-rem"
+                      : "border border-rem/30 text-rem/70 hover:bg-rem/10 hover:border-rem hover:text-rem"
                 }`}
+                style={{ paddingTop: 6, paddingBottom: 6, paddingLeft: 6, paddingRight: 6 }}
               >
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
                   <path d={showDeploy ? "M2 6.5L5 3.5L8 6.5" : "M2 3.5L5 6.5L8 3.5"} />
@@ -253,39 +288,49 @@ export default function ProjectPage() {
             {/* Tier + model dropdown */}
             {showDeploy && (
               <div className="absolute right-0 top-full mt-1 border border-border bg-background z-50 min-w-[200px] shadow-sm">
-                {(Object.keys(TIER_CONFIG) as Tier[]).map((t) => (
-                  <div key={t}>
-                    <div className="px-3 py-1.5 text-[10px] tracking-wider text-muted-foreground/50 border-b border-border/50">
-                      {TIER_CONFIG[t].label.toUpperCase()}
+                {(Object.keys(TIER_CONFIG) as Tier[]).map((t) => {
+                  const isTierActive = selectedTier === t;
+                  return (
+                    <div key={t}>
+                      <div className={`px-3 py-1.5 text-[10px] tracking-wider border-b transition-colors duration-100 ${
+                        isTierActive
+                          ? t === "oni"
+                            ? "text-rem bg-rem/8 border-border/50"
+                            : "text-rem/70 bg-rem/5 border-border/50"
+                          : "text-muted-foreground/50 border-border/50"
+                      }`}>
+                        {TIER_CONFIG[t].label.toUpperCase()}
+                        <span className="ml-2 text-muted-foreground/30">${TIER_CONFIG[t].price}</span>
+                      </div>
+                      {Object.entries(TIER_CONFIG[t].models).map(([key, m]) => {
+                        const isSelected = selectedTier === t && selectedModel === key;
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => {
+                              setSelectedTier(t);
+                              setSelectedModel(key);
+                              setShowDeploy(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-all duration-100 ${
+                              isSelected
+                                ? "text-rem bg-rem/8"
+                                : "text-foreground/80 hover:bg-card/80 hover:text-foreground"
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              isSelected ? "bg-rem" : "bg-border"
+                            }`} />
+                            {(m as { label: string }).label}
+                            {key === TIER_CONFIG[t].defaultModel && (
+                              <span className="text-muted-foreground/30 ml-auto text-[10px]">default</span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
-                    {Object.entries(TIER_CONFIG[t].models).map(([key, m]) => {
-                      const isSelected = selectedTier === t && selectedModel === key;
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => {
-                            setSelectedTier(t);
-                            setSelectedModel(key);
-                            setShowDeploy(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-all duration-100 ${
-                            isSelected
-                              ? "text-rem bg-rem/8"
-                              : "text-foreground/80 hover:bg-card/80 hover:text-foreground"
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            isSelected ? "bg-rem" : "bg-border"
-                          }`} />
-                          {(m as { label: string }).label}
-                          {key === TIER_CONFIG[t].defaultModel && (
-                            <span className="text-muted-foreground/30 ml-auto text-[10px]">default</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

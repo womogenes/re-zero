@@ -3,12 +3,16 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useUser } from "@clerk/nextjs";
 import { useState } from "react";
 import { useMinLoading } from "@/hooks/use-min-loading";
+import { TIER_CONFIG, type Tier } from "@/lib/scan-tiers";
 
 export default function SettingsPage() {
   const { user, isLoaded } = useCurrentUser();
+  const { user: clerkUser } = useUser();
   const minTime = useMinLoading();
+  const updateDefaultTier = useMutation(api.users.updateDefaultTier);
   const keys = useQuery(
     api.apiKeys.listByUser,
     user ? { userId: user._id } : "skip"
@@ -66,6 +70,35 @@ export default function SettingsPage() {
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">
       <h1 className="text-base font-semibold mb-8">settings</h1>
+
+      {/* Default Scan Tier */}
+      <section className="mb-12">
+        <p className="text-xs text-muted-foreground mb-4">DEFAULT SCAN MODE</p>
+        <p className="text-sm text-muted-foreground mb-4">
+          New scans default to this tier. You can always override per-scan.
+        </p>
+        <div className="flex gap-2">
+          {(Object.keys(TIER_CONFIG) as Tier[]).map((t) => {
+            const isActive = (user?.defaultTier ?? "maid") === t;
+            return (
+              <button
+                key={t}
+                onClick={() => {
+                  if (clerkUser) updateDefaultTier({ clerkId: clerkUser.id, defaultTier: t });
+                }}
+                className={`text-sm border px-4 py-2 transition-all duration-100 ${
+                  isActive
+                    ? "border-rem/30 bg-rem/5 text-rem"
+                    : "border-border text-muted-foreground hover:border-rem/20 hover:text-foreground"
+                }`}
+              >
+                <span className="block font-medium">{TIER_CONFIG[t].label}</span>
+                <span className="block text-xs text-muted-foreground mt-0.5">${TIER_CONFIG[t].price}/scan</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* API Keys Section */}
       <section>

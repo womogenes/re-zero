@@ -62,3 +62,19 @@ export const updateTheme = mutation({
     }
   },
 });
+
+export const updateDefaultTier = mutation({
+  args: {
+    clerkId: v.string(),
+    defaultTier: v.union(v.literal("maid"), v.literal("oni")),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .unique();
+    if (user) {
+      await ctx.db.patch(user._id, { defaultTier: args.defaultTier });
+    }
+  },
+});
