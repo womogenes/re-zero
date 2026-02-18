@@ -38,16 +38,15 @@ export default function BillingPage() {
               Active subscription
             </p>
             {scanFeature && (
-              <p className="text-xs text-muted-foreground mt-2">
-                {scanFeature.unlimited
-                  ? "Unlimited scans (pay-as-you-go)"
-                  : `${scanFeature.balance ?? 0} scans remaining`}
-                {scanFeature.usage != null && (
-                  <span className="ml-2">
-                    ({scanFeature.usage} used this period)
-                  </span>
+              <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                <p>Pay-as-you-go ($25/scan)</p>
+                {scanFeature.balance > 0 && (
+                  <p>{scanFeature.balance} prepaid scans remaining</p>
                 )}
-              </p>
+                {scanFeature.usage > 0 && (
+                  <p>{scanFeature.usage} used this period</p>
+                )}
+              </div>
             )}
           </div>
         ) : (
