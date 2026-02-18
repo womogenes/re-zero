@@ -46,7 +46,8 @@ export default function ProjectPage() {
 
   const [starting, setStarting] = useState(false);
   const [selectedTier, setSelectedTier] = useState<Tier>(DEFAULT_TIER);
-  const [showTierPicker, setShowTierPicker] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>(TIER_CONFIG[DEFAULT_TIER].defaultModel);
+  const [showConfig, setShowConfig] = useState(false);
   const [selectedScanId, setSelectedScanId] = useState<string | null>(null);
   const [showCreds, setShowCreds] = useState(false);
   const [credUsername, setCredUsername] = useState("");
@@ -125,8 +126,9 @@ export default function ProjectPage() {
   const handleStartScan = async () => {
     if (!project || !apiKey) return;
     setStarting(true);
+    setShowConfig(false);
     const tier = selectedTier;
-    const model = TIER_CONFIG[tier].defaultModel;
+    const model = selectedModel;
     const scanId = await createScan({ projectId, tier, model });
     try {
       await fetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/scans/start`, {
@@ -203,39 +205,79 @@ export default function ProjectPage() {
             </>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Tier tabs — always visible */}
+          <div className="flex items-center border border-border overflow-hidden">
+            {(Object.keys(TIER_CONFIG) as Tier[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setSelectedTier(t);
+                  setSelectedModel(TIER_CONFIG[t].defaultModel);
+                }}
+                className={`text-xs px-2.5 py-1.5 transition-all duration-100 ${
+                  t === selectedTier
+                    ? "bg-rem/10 text-rem"
+                    : "text-muted-foreground/60 hover:text-foreground hover:bg-card/50"
+                }`}
+              >
+                {TIER_CONFIG[t].label}
+              </button>
+            ))}
+          </div>
+          {/* Configure model */}
           <button
-            onClick={() => setShowTierPicker(!showTierPicker)}
-            className="text-xs text-muted-foreground/60 hover:text-rem transition-colors duration-100 px-1"
+            onClick={() => setShowConfig(!showConfig)}
+            className={`text-xs px-1.5 py-1.5 transition-all duration-100 ${
+              showConfig ? "text-rem" : "text-muted-foreground/40 hover:text-muted-foreground"
+            }`}
+            title="Configure model"
           >
-            {TIER_CONFIG[selectedTier].label} · ${TIER_CONFIG[selectedTier].price}
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="8" cy="8" r="2.5" />
+              <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.17 3.17l1.42 1.42M11.41 11.41l1.42 1.42M3.17 12.83l1.42-1.42M11.41 4.59l1.42-1.42" />
+            </svg>
           </button>
-          {showTierPicker && (
-            <div className="flex items-center gap-1">
-              {(Object.keys(TIER_CONFIG) as Tier[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => { setSelectedTier(t); setShowTierPicker(false); }}
-                  className={`text-xs px-2 py-1 border transition-all duration-100 ${
-                    t === selectedTier
-                      ? "border-rem text-rem bg-rem/10"
-                      : "border-border text-muted-foreground hover:border-rem/30"
-                  }`}
-                >
-                  {TIER_CONFIG[t].label} ${TIER_CONFIG[t].price}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Deploy */}
           <button
             onClick={handleStartScan}
             disabled={starting}
             className="text-xs border border-rem/30 text-rem/70 px-2.5 py-1.5 hover:bg-rem/10 hover:border-rem hover:text-rem transition-all duration-100 disabled:opacity-30 active:translate-y-px"
           >
-            + Deploy Rem
+            + Deploy Rem · ${TIER_CONFIG[selectedTier].price}
           </button>
         </div>
       </div>
+
+      {/* Model config panel */}
+      {showConfig && (
+        <div className="px-6 py-3 border-b border-border shrink-0 bg-card/30">
+          <div className="flex items-center gap-6">
+            <label className="text-xs text-muted-foreground shrink-0">model</label>
+            <div className="flex items-center gap-1.5">
+              {Object.entries(TIER_CONFIG[selectedTier].models).map(([key, m]) => (
+                <button
+                  key={key}
+                  onClick={() => setSelectedModel(key)}
+                  className={`text-xs px-2.5 py-1 border transition-all duration-100 ${
+                    key === selectedModel
+                      ? "border-rem/50 text-rem bg-rem/8"
+                      : "border-border text-muted-foreground/60 hover:border-rem/30 hover:text-foreground"
+                  }`}
+                >
+                  {(m as { label: string }).label}
+                  {key === TIER_CONFIG[selectedTier].defaultModel && (
+                    <span className="ml-1.5 text-muted-foreground/30">default</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground/30 ml-auto">
+              {selectedTier === "maid" ? "$25" : "$45"} regardless of model
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Scan config panel */}
       {showCreds && project.targetType === "web" && (

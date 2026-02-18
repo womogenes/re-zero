@@ -1,12 +1,109 @@
 "use client";
 
 import { useCustomer, CheckoutDialog } from "autumn-js/react";
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMinLoading } from "@/hooks/use-min-loading";
+import { useMemo } from "react";
 
 const BILLING_URL = typeof window !== "undefined" ? `${window.location.origin}/billing` : "/billing";
 
+// Build last 30 days of usage data from scan records
+function UsageGraph({ scans }: { scans: Array<{ tier?: string; status: string; startedAt: number }> }) {
+  const data = useMemo(() => {
+    const now = Date.now();
+    const days = 30;
+    const buckets: Array<{ date: string; maid: number; oni: number }> = [];
+
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(now - i * 86400000);
+      buckets.push({
+        date: `${d.getMonth() + 1}/${d.getDate()}`,
+        maid: 0,
+        oni: 0,
+      });
+    }
+
+    // Only count completed scans (pay-as-you-go = completed scans)
+    for (const scan of scans) {
+      if (scan.status !== "completed") continue;
+      const dayIndex = days - 1 - Math.floor((now - scan.startedAt) / 86400000);
+      if (dayIndex < 0 || dayIndex >= days) continue;
+      const tier = scan.tier || "maid";
+      if (tier === "oni") buckets[dayIndex].oni++;
+      else buckets[dayIndex].maid++;
+    }
+
+    return buckets;
+  }, [scans]);
+
+  const maxVal = Math.max(1, ...data.map((d) => d.maid + d.oni));
+  const totalMaid = data.reduce((s, d) => s + d.maid, 0);
+  const totalOni = data.reduce((s, d) => s + d.oni, 0);
+  const totalSpend = totalMaid * 25 + totalOni * 45;
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <span className="text-xs text-muted-foreground">last 30 days</span>
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
+            <span className="inline-block w-2 h-2 bg-rem/40" /> maid
+          </span>
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
+            <span className="inline-block w-2 h-2 bg-rem" /> oni
+          </span>
+        </div>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {totalMaid + totalOni} scans &middot; ${totalSpend}
+        </span>
+      </div>
+      <div className="flex items-end gap-px h-20">
+        {data.map((d, i) => {
+          const total = d.maid + d.oni;
+          const h = total > 0 ? Math.max(4, (total / maxVal) * 100) : 0;
+          const oniPct = total > 0 ? (d.oni / total) * 100 : 0;
+          return (
+            <div
+              key={i}
+              className="flex-1 flex flex-col justify-end group relative"
+              title={`${d.date}: ${d.maid} maid, ${d.oni} oni`}
+            >
+              {total > 0 ? (
+                <div
+                  className="w-full transition-all duration-150 group-hover:opacity-80 overflow-hidden"
+                  style={{ height: `${h}%` }}
+                >
+                  {d.oni > 0 && (
+                    <div className="bg-rem w-full" style={{ height: `${oniPct}%` }} />
+                  )}
+                  {d.maid > 0 && (
+                    <div className="bg-rem/40 w-full flex-1" style={{ height: `${100 - oniPct}%` }} />
+                  )}
+                </div>
+              ) : (
+                <div className="w-full h-px bg-border/30" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-between mt-1.5">
+        <span className="text-[10px] tabular-nums text-muted-foreground/30">{data[0]?.date}</span>
+        <span className="text-[10px] tabular-nums text-muted-foreground/30">today</span>
+      </div>
+    </div>
+  );
+}
+
 export default function BillingPage() {
   const { customer, checkout, openBillingPortal, isLoading } = useCustomer();
+  const { user } = useCurrentUser();
+  const scans = useQuery(
+    api.scans.listByUser,
+    user ? { userId: user._id } : "skip"
+  );
   const minTime = useMinLoading();
 
   if (isLoading || !minTime) {
@@ -65,6 +162,16 @@ export default function BillingPage() {
           </div>
         )}
       </section>
+
+      {/* Usage graph */}
+      {hasSubscription && scans && (
+        <section className="mb-12">
+          <p className="text-xs text-muted-foreground mb-4">USAGE</p>
+          <div className="border border-border p-4">
+            <UsageGraph scans={scans} />
+          </div>
+        </section>
+      )}
 
       {/* Scan packs */}
       {hasSubscription && (

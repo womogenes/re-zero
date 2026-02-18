@@ -68,6 +68,27 @@ export const getByShareToken = query({
   },
 });
 
+export const listByUser = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    // Get all projects for this user
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+    // Get all scans across all projects
+    const allScans = [];
+    for (const project of projects) {
+      const scans = await ctx.db
+        .query("scans")
+        .withIndex("by_project", (q) => q.eq("projectId", project._id))
+        .collect();
+      allScans.push(...scans);
+    }
+    return allScans;
+  },
+});
+
 export const updateStatus = mutation({
   args: {
     scanId: v.id("scans"),
