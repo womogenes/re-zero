@@ -410,7 +410,7 @@ export function initCommand(): Command {
 
       if (trigger !== "manual") {
         process.stderr.write(chalk.dim(`\n  Don't forget to add REM_API_KEY to your GitHub repo secrets.\n`));
-        process.stderr.write(chalk.dim(`  Get your key: rem status\n`));
+        process.stderr.write(chalk.dim(`  Get your key at ${chalk.underline("https://rezero.sh/settings")}\n`));
       }
 
       process.stderr.write("\n");
