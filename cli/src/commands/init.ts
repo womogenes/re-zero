@@ -345,11 +345,11 @@ export function initCommand(): Command {
 
       // Q2: Severity policy
       const failOnChoice = await selectOption("What happens when vulnerabilities are found?", [
-        { label: "Block on critical/high (Recommended)", value: "critical, high" },
+        { label: "Block on critical only (Recommended)", value: "critical" },
+        { label: "Block on critical and high", value: "critical, high" },
         { label: "Warn only (never block deploys)", value: "warn" },
-        { label: "Block on all severities", value: "critical, high, medium, low" },
       ]);
-      const failOn = failOnChoice === "warn" ? "critical, high" : failOnChoice;
+      const failOn = failOnChoice === "warn" ? "critical" : failOnChoice;
       const warnOnly = failOnChoice === "warn";
 
       // Q3: Budget

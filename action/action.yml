@@ -11,7 +11,7 @@ inputs:
   fail-on:
     description: 'Comma-separated severity levels that block the PR'
     required: false
-    default: 'critical,high'
+    default: 'critical'
   server-url:
     description: 'Server URL override'
     required: false

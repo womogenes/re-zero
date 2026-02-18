@@ -40,6 +40,12 @@ Rules:
   - info: Observations, not vulnerabilities
 - If no issues are found, return an empty findings array.
 - Be precise, not exhaustive. False positives erode trust.
+- Do NOT flag these as vulnerabilities:
+  - ${{ secrets.* }} references in GitHub Actions (these are masked, not exposed)
+  - GitHub Action version tags like @main or @v1 (tag pinning is a best practice, not a vulnerability)
+  - Standard CI/CD boilerplate (checkout, deploy steps, env var references)
+  - .gitignore, .remignore, or other config files that don't contain secrets
+- Reserve critical/high for real exploitable issues, not best-practice suggestions.
 
 Use the submit_gate_findings tool to return your analysis."""
 
