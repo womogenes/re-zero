@@ -53,7 +53,7 @@ print(f"Entropy: {entropy[0]:.4f} -> {entropy[-1]:.4f}")
 
 # === CHART ===
 plt.style.use('dark_background')
-fig, axes = plt.subplots(3, 2, figsize=(16, 14))
+fig, axes = plt.subplots(3, 2, figsize=(28, 14))
 fig.suptitle(
     'OpenReasoning-Nemotron-14B  |  GRPO Training v2  |  5 CTF Environments\n'
     '8\u00d7H100  |  LoRA r=32  |  batch=64  |  16 rollouts/ex  |  temp=0.9  |  300 steps',
