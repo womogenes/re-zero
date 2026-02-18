@@ -354,8 +354,8 @@ export function initCommand(): Command {
 
       // Q3: Budget
       const budget = await selectOption("Monthly spending limit?", [
-        { label: "$100/month (Recommended)", value: "100" },
-        { label: "$250/month", value: "250" },
+        { label: "$50/month (Recommended)", value: "50" },
+        { label: "$100/month", value: "100" },
         { label: "No limit", value: "null" },
       ]);
 
