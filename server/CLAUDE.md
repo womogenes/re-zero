@@ -20,8 +20,12 @@ server/
 │   ├── config.py        # Settings from .env (Convex URL, deploy key, Modal tokens)
 │   ├── convex_client.py # HTTP client for calling Convex mutations/queries
 │   ├── routers/
-│   │   ├── scans.py     # POST /scans/start, /scans/action, /scans/report
+│   │   ├── scans.py     # POST /scans/launch, /scans/start, /scans/action, /scans/report, /scans/verify
+│   │   ├── gate.py      # POST /gate/scan (synchronous Haiku gate scan on diffs)
 │   │   └── gateways.py  # POST /gateways/heartbeat
+│   ├── lib/
+│   │   ├── anthropic_client.py  # Shared Anthropic/Bedrock client factory
+│   │   └── autumn.py    # Autumn billing: autumn_check, autumn_track
 │   └── sandbox/
 │       └── orchestrator.py  # Modal functions: run_oss_scan, run_web_scan
 ```
