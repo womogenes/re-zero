@@ -1509,21 +1509,39 @@ async def _start_stagehand_browser(target_url: str):
     import glob
 
     # Find Playwright's Chromium binary for Stagehand local mode
-    chrome_paths = glob.glob("/root/.cache/ms-playwright/chromium-*/chrome-linux/chrome")
-    if chrome_paths:
-        os.environ["CHROME_PATH"] = chrome_paths[0]
+    # Playwright 1.58+ installs both full chromium and headless shell
+    chrome_path = ""
+    for pattern in [
+        "/root/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
+        "/root/.cache/ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell",
+    ]:
+        found = glob.glob(pattern)
+        if found:
+            chrome_path = found[0]
+            break
+
+    if not chrome_path:
+        # List what's actually in the playwright cache for debugging
+        import pathlib
+        pw_cache = pathlib.Path("/root/.cache/ms-playwright")
+        if pw_cache.exists():
+            all_files = list(pw_cache.rglob("*"))
+            print(f"[stagehand] Playwright cache contents ({len(all_files)} files):")
+            for f in all_files[:30]:
+                print(f"  {f}")
+        raise RuntimeError("No Chromium binary found in Playwright cache")
+
+    os.environ["CHROME_PATH"] = chrome_path
+    print(f"[stagehand] CHROME_PATH={chrome_path}")
+    print(f"[stagehand] AWS_REGION={os.environ.get('AWS_REGION', 'NOT SET')}")
 
     # Create Stagehand client in local mode — Haiku via Bedrock handles element resolution
     # AWS creds (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
     # already in env from Modal secret — SEA binary picks them up via AWS credential chain
-    chrome_path = os.environ.get("CHROME_PATH", "")
-    print(f"[stagehand] CHROME_PATH={chrome_path}")
-    print(f"[stagehand] AWS_REGION={os.environ.get('AWS_REGION', 'NOT SET')}")
-    print(f"[stagehand] USE_BEDROCK={os.environ.get('USE_BEDROCK', 'NOT SET')}")
-
     client = AsyncStagehand(
         server="local",
         model_api_key="bedrock",  # placeholder — bedrock uses AWS credential chain, not API key
+        local_chrome_path=chrome_path,
         local_ready_timeout_s=60.0,  # SEA binary can be slow on first boot
     )
     print("[stagehand] AsyncStagehand client created, starting session...")
