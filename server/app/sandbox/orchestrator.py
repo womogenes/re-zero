@@ -1522,6 +1522,7 @@ async def _start_stagehand_browser(target_url: str):
     )
     session = await client.sessions.start(
         model_name="bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        browser={"type": "local"},
     )
 
     # Navigate to target via Stagehand
