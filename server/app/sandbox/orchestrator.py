@@ -834,6 +834,10 @@ def _build_opencode_config(model: str) -> dict:
     return {
         "provider": {
             "openrouter": {
+                # includeUsage: fixes NaN token counts with OpenAI-compatible
+                # streaming (OpenCode issue #423 / ai-sdk issue #6774).
+                # Without this, tokens.total = NaN → Zod validation crash.
+                "includeUsage": True,
                 "models": {
                     nitro_id: {
                         "name": label,
@@ -1074,21 +1078,70 @@ async def _stream_opencode_events(
     We use message.part.updated (fires when a part is finalized) for
     complete text/reasoning blocks and tool state changes.  We ignore
     message.part.delta (per-token streaming) to avoid flooding Convex.
+
+    The /event endpoint is global (broadcasts ALL sessions). We filter
+    by session_id client-side. If no meaningful event arrives for
+    STALE_TIMEOUT seconds, we poll session status to detect dead sessions.
     """
     import json
+    import time
     import httpx
+
+    STALE_TIMEOUT = 300  # 5 minutes without a meaningful event → check session
 
     report_submitted = False
     seen_tool_calls = set()  # Track tool call IDs to avoid duplicate push
     seen_text_parts = set()  # Track text/reasoning part IDs already pushed
+    last_meaningful_event = time.monotonic()
+
+    def _extract_session_id(data: dict) -> str | None:
+        """Extract sessionID from an OpenCode SSE event."""
+        props = data.get("properties", {})
+        # message.part.updated / message.part.delta → properties.part.sessionID
+        part = props.get("part", {})
+        if isinstance(part, dict) and part.get("sessionID"):
+            return part["sessionID"]
+        # session.* → properties.info.id or properties.sessionID
+        info = props.get("info", {})
+        if isinstance(info, dict) and info.get("id"):
+            return info["id"]
+        return props.get("sessionID")
+
+    async def _check_session_alive() -> bool:
+        """Poll session status — returns False if session is dead/errored."""
+        try:
+            resp = await client.get(f"/session/{session_id}", timeout=httpx.Timeout(10, connect=5))
+            if resp.status_code != 200:
+                return False
+            # Also check /session/status for running state
+            status_resp = await client.get("/session/status", timeout=httpx.Timeout(10, connect=5))
+            if status_resp.status_code == 200:
+                statuses = status_resp.json()
+                if isinstance(statuses, dict):
+                    sess_status = statuses.get(session_id, {})
+                    if isinstance(sess_status, dict):
+                        # If status is "idle" or missing, session has stopped
+                        return sess_status.get("status") not in (None, "idle", "error")
+                    elif isinstance(sess_status, str):
+                        return sess_status not in ("idle", "error", "")
+            return True  # Can't determine, assume alive
+        except Exception:
+            return True  # Network error, don't kill prematurely
 
     try:
         async with client.stream(
             "GET", "/event",
-            timeout=httpx.Timeout(None, connect=30),
+            timeout=httpx.Timeout(STALE_TIMEOUT + 60, connect=30),
         ) as response:
             async for line in response.aiter_lines():
                 if not line.startswith("data:"):
+                    # Check staleness on non-data lines (heartbeats, comments)
+                    if time.monotonic() - last_meaningful_event > STALE_TIMEOUT:
+                        alive = await _check_session_alive()
+                        if not alive:
+                            await _push_action(convex_url, deploy_key, scan_id, "observation",
+                                "OpenCode session appears dead (no activity). Recovering...")
+                            break
                     continue
 
                 raw = line[5:].strip()
@@ -1102,8 +1155,14 @@ async def _stream_opencode_events(
 
                 event_type = data.get("type", "")
 
+                # Filter by session_id (the /event endpoint is global)
+                evt_session = _extract_session_id(data)
+                if evt_session and evt_session != session_id:
+                    continue
+
                 # --- Complete part (text, reasoning, tool) ---
                 if event_type == "message.part.updated":
+                    last_meaningful_event = time.monotonic()
                     # Part is nested under properties.part
                     part = data.get("properties", {}).get("part", {})
                     part_type = part.get("type", "")
@@ -1168,14 +1227,29 @@ async def _stream_opencode_events(
 
                 # --- Session completion ---
                 elif event_type == "session.idle":
+                    last_meaningful_event = time.monotonic()
                     break
 
                 elif event_type == "session.error":
+                    last_meaningful_event = time.monotonic()
                     error_msg = data.get("properties", {}).get("error", str(data))
                     await _push_action(convex_url, deploy_key, scan_id, "observation",
                         f"Rem encountered an error: {str(error_msg)[:300]}")
                     break
 
+                # Stale check on delta events (these arrive frequently but
+                # don't reset the meaningful timer — they're just streaming tokens)
+                elif event_type == "message.part.delta":
+                    if time.monotonic() - last_meaningful_event > STALE_TIMEOUT:
+                        alive = await _check_session_alive()
+                        if not alive:
+                            await _push_action(convex_url, deploy_key, scan_id, "observation",
+                                "OpenCode session appears dead (streaming deltas but no progress). Recovering...")
+                            break
+
+    except httpx.ReadTimeout:
+        await _push_action(convex_url, deploy_key, scan_id, "observation",
+            f"SSE stream timed out after {STALE_TIMEOUT + 60}s with no data. Recovering...")
     except Exception as e:
         await _push_action(convex_url, deploy_key, scan_id, "observation",
             f"SSE stream error: {str(e)[:200]}")
@@ -1366,7 +1440,7 @@ Files in repository:
             await _push_action(convex_url, deploy_key, scan_id, "reasoning",
                 f"Rem ({model_label}) starting security analysis...")
 
-            await client.post(
+            prompt_resp = await client.post(
                 f"/session/{session_id}/prompt_async",
                 json={
                     "system": system_prompt,
@@ -1374,9 +1448,15 @@ Files in repository:
                 },
                 timeout=httpx.Timeout(30, connect=10),
             )
+            prompt_resp.raise_for_status()
 
-            # Wait for SSE stream to finish (session.idle or error)
-            await sse_task
+            # Wait for SSE stream to finish (session.idle, error, or stale timeout)
+            # Hard cap at 45 minutes — no scan should run longer than this
+            try:
+                await asyncio.wait_for(sse_task, timeout=2700)
+            except asyncio.TimeoutError:
+                await _push_action(convex_url, deploy_key, scan_id, "observation",
+                    "Scan hit 45-minute hard limit. Compiling findings so far...")
 
     except Exception as e:
         # Capture stderr from the OpenCode process for debugging
@@ -1679,7 +1759,7 @@ Be thorough and aggressive. Only report confirmed or highly probable vulnerabili
                 await _push_action(convex_url, deploy_key, scan_id, "reasoning",
                     f"Rem ({model_label}) starting web penetration test...")
 
-                await client.post(
+                prompt_resp = await client.post(
                     f"/session/{session_id}/prompt_async",
                     json={
                         "system": system_prompt,
@@ -1687,8 +1767,14 @@ Be thorough and aggressive. Only report confirmed or highly probable vulnerabili
                     },
                     timeout=httpx.Timeout(30, connect=10),
                 )
+                prompt_resp.raise_for_status()
 
-                await sse_task
+                # Wait for SSE stream (session.idle, error, or stale timeout)
+                try:
+                    await asyncio.wait_for(sse_task, timeout=2700)
+                except asyncio.TimeoutError:
+                    await _push_action(convex_url, deploy_key, scan_id, "observation",
+                        "Scan hit 45-minute hard limit. Compiling findings so far...")
 
         except Exception as e:
             stderr_text = ""
