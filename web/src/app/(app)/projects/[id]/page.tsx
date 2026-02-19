@@ -202,7 +202,13 @@ export default function ProjectPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-3.25rem)]">
       {/* Top bar: project info + deploy buttons */}
-      <div className="px-6 py-3 border-b border-border shrink-0 flex items-center justify-between gap-6">
+      <div className={`px-6 py-3 border-b border-border shrink-0 flex items-center justify-between gap-6 relative overflow-hidden ${
+        selectedTier === "oni" ? "border-b-rem/30" : ""
+      }`}>
+        {/* Oni ambient shimmer */}
+        {selectedTier === "oni" && (
+          <div className="absolute inset-0 animate-oni-shimmer pointer-events-none" />
+        )}
         <div className="flex items-baseline gap-2 min-w-0">
           <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-rem transition-colors duration-150 shrink-0">
             projects
@@ -244,23 +250,23 @@ export default function ProjectPage() {
             </span>
           )}
           {/* Mode indicator */}
-          <span className={`text-[10px] tracking-wider px-1.5 py-0.5 transition-all duration-150 select-none ${
+          <span className={`text-[10px] tracking-wider px-1.5 py-0.5 select-none transition-all duration-300 ${
             selectedTier === "oni"
-              ? "bg-rem text-white"
+              ? "bg-rem text-white animate-oni-badge"
               : "border border-rem/20 text-rem/50"
           }`}>
             {TIER_CONFIG[selectedTier].label.toUpperCase()}
           </span>
           <div className="relative" ref={deployRef}>
-            <div className={`flex items-stretch transition-shadow duration-300 ${
-              selectedTier === "oni" ? "shadow-[0_0_16px_-4px] shadow-rem/30" : ""
+            <div className={`flex items-stretch transition-all duration-300 ${
+              selectedTier === "oni" ? "animate-oni-glow" : ""
             }`}>
               <button
                 onClick={handleStartScan}
                 disabled={starting}
-                className={`text-xs px-2.5 flex items-center transition-all duration-100 disabled:opacity-30 active:translate-y-px border-r-0 ${
+                className={`text-xs px-2.5 flex items-center transition-all duration-200 disabled:opacity-30 active:translate-y-px border-r-0 ${
                   selectedTier === "oni"
-                    ? "border border-rem text-rem hover:bg-rem/15"
+                    ? "border border-rem bg-rem text-white hover:bg-rem/90"
                     : "border border-rem/30 text-rem/70 hover:bg-rem/10 hover:border-rem hover:text-rem"
                 }`}
                 style={{ paddingTop: 6, paddingBottom: 6 }}
@@ -269,11 +275,11 @@ export default function ProjectPage() {
               </button>
               <button
                 onClick={() => setShowDeploy(!showDeploy)}
-                className={`text-xs flex items-center justify-center transition-all duration-100 active:translate-y-px ${
+                className={`text-xs flex items-center justify-center transition-all duration-200 active:translate-y-px ${
                   selectedTier === "oni"
                     ? showDeploy
-                      ? "border border-rem bg-rem/15 text-rem"
-                      : "border border-rem text-rem hover:bg-rem/15"
+                      ? "border border-rem bg-white/20 text-white"
+                      : "border border-rem bg-rem text-white hover:bg-rem/90"
                     : showDeploy
                       ? "border border-rem bg-rem/10 text-rem"
                       : "border border-rem/30 text-rem/70 hover:bg-rem/10 hover:border-rem hover:text-rem"
@@ -287,20 +293,22 @@ export default function ProjectPage() {
             </div>
             {/* Tier + model dropdown */}
             {showDeploy && (
-              <div className="absolute right-0 top-full mt-1 border border-border bg-background z-50 min-w-[200px] shadow-sm">
+              <div className="absolute right-0 top-full mt-1 border border-border bg-background z-50 min-w-[220px] shadow-sm">
                 {(Object.keys(TIER_CONFIG) as Tier[]).map((t) => {
                   const isTierActive = selectedTier === t;
                   return (
                     <div key={t}>
-                      <div className={`px-3 py-1.5 text-[10px] tracking-wider border-b transition-colors duration-100 ${
+                      <div className={`px-3 py-1.5 text-[10px] tracking-wider border-b transition-all duration-150 ${
                         isTierActive
                           ? t === "oni"
-                            ? "text-rem bg-rem/8 border-border/50"
+                            ? "text-white bg-rem border-rem/50 font-medium"
                             : "text-rem/70 bg-rem/5 border-border/50"
                           : "text-muted-foreground/50 border-border/50"
                       }`}>
                         {TIER_CONFIG[t].label.toUpperCase()}
-                        <span className="ml-2 text-muted-foreground/30">${TIER_CONFIG[t].price}</span>
+                        <span className={`ml-2 ${isTierActive && t === "oni" ? "text-white/50" : "text-muted-foreground/30"}`}>
+                          ${TIER_CONFIG[t].price}
+                        </span>
                       </div>
                       {Object.entries(TIER_CONFIG[t].models).map(([key, m]) => {
                         const isSelected = selectedTier === t && selectedModel === key;
@@ -484,8 +492,11 @@ export default function ProjectPage() {
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <img src="/rem-running.gif" alt="Rem" className="w-20 h-20 mx-auto mb-3 object-contain" />
-                <p className="text-sm text-rem mb-1">
-                  Rem ({getScanShort(selectedScan)}) is investigating...
+                <p className={`text-sm mb-1 ${selectedScan.tier === "oni" ? "text-rem font-medium" : "text-rem"}`}>
+                  {selectedScan.tier === "oni"
+                    ? `Rem (${getScanShort(selectedScan)}) is tearing through the code...`
+                    : `Rem (${getScanShort(selectedScan)}) is investigating...`
+                  }
                 </p>
                 <Link
                   href={`/projects/${projectId}/scan/${selectedScan._id}`}

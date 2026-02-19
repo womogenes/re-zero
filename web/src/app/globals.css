@@ -238,6 +238,31 @@
   100% { transform: translateY(100vh); }
 }
 
+/* Oni mode — Rem's demon horn glow */
+@keyframes oniGlow {
+  0%, 100% {
+    box-shadow:
+      0 0 12px -2px color-mix(in srgb, var(--rem) 50%, transparent),
+      0 0 4px -1px color-mix(in srgb, var(--rem) 30%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 24px 0px color-mix(in srgb, var(--rem) 60%, transparent),
+      0 0 8px 0px color-mix(in srgb, var(--rem) 40%, transparent),
+      inset 0 0 8px -4px color-mix(in srgb, var(--rem) 15%, transparent);
+  }
+}
+
+@keyframes oniBadge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes oniShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
 /* Utility classes for animations */
 @layer utilities {
   .animate-blink {
@@ -250,5 +275,24 @@
 
   .animate-brand-pulse {
     animation: brandPulse 2s ease-in-out infinite;
+  }
+
+  .animate-oni-glow {
+    animation: oniGlow 2s ease-in-out infinite;
+  }
+
+  .animate-oni-badge {
+    animation: oniBadge 2s ease-in-out infinite;
+  }
+
+  .animate-oni-shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--rem) 8%, transparent) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: oniShimmer 3s ease-in-out infinite;
   }
 }
