@@ -1525,8 +1525,8 @@ async def _start_stagehand_browser(target_url: str):
         model_name="bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
         browser={
             "type": "local",
-            "launch_options": {
-                "executable_path": chrome_path,
+            "launchOptions": {
+                "executablePath": chrome_path,
                 "headless": True,
                 "args": ["--no-sandbox", "--disable-setuid-sandbox"],
             },
