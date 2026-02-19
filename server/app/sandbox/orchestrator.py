@@ -1516,11 +1516,17 @@ async def _start_stagehand_browser(target_url: str):
     # Create Stagehand client in local mode — Haiku via Bedrock handles element resolution
     # AWS creds (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
     # already in env from Modal secret — SEA binary picks them up via AWS credential chain
+    chrome_path = os.environ.get("CHROME_PATH", "")
+    print(f"[stagehand] CHROME_PATH={chrome_path}")
+    print(f"[stagehand] AWS_REGION={os.environ.get('AWS_REGION', 'NOT SET')}")
+    print(f"[stagehand] USE_BEDROCK={os.environ.get('USE_BEDROCK', 'NOT SET')}")
+
     client = AsyncStagehand(
         server="local",
         model_api_key="bedrock",  # placeholder — bedrock uses AWS credential chain, not API key
+        local_ready_timeout_s=60.0,  # SEA binary can be slow on first boot
     )
-    chrome_path = os.environ.get("CHROME_PATH", "")
+    print("[stagehand] AsyncStagehand client created, starting session...")
     session = await client.sessions.start(
         model_name="bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
         browser={
@@ -1532,6 +1538,7 @@ async def _start_stagehand_browser(target_url: str):
             },
         },
     )
+    print(f"[stagehand] Session started: {session.session_id}")
 
     # Navigate to target via Stagehand
     await session.navigate(url=target_url)
