@@ -10,7 +10,7 @@ import { useMinLoading } from "@/hooks/use-min-loading";
 import { useApiKey } from "@/hooks/use-api-key";
 import { useCustomer } from "autumn-js/react";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { TIER_CONFIG, DEFAULT_TIER, getScanLabel, getScanShort, type Tier } from "@/lib/scan-tiers";
+import { TIER_CONFIG, DEFAULT_TIER, getScanLabel, getScanShort, getScanModelLabel, formatRelativeTime, formatDuration, type Tier } from "@/lib/scan-tiers";
 
 function SeverityBar({ findings }: { findings: Array<{ severity: string }> }) {
   if (findings.length === 0) return null;
@@ -435,35 +435,44 @@ export default function ProjectPage() {
                       : "border-l-2 border-l-transparent hover:bg-accent/40 hover:border-l-rem/50"
                   }`}
                 >
+                  {/* Line 1: tier · model + relative time */}
                   <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       {isRunning && (
                         <span className="inline-block w-1.5 h-1.5 bg-rem animate-pulse shrink-0" />
                       )}
+                      <span className="text-muted-foreground text-sm">{getScanShort(scan)}</span>
+                      <span className="text-muted-foreground/30 text-sm">·</span>
                       <span className={`text-sm ${isSelected ? "text-rem" : "text-foreground"}`}>
-                        {getScanShort(scan)}
+                        {getScanModelLabel(scan)}
                       </span>
                     </div>
-                    {isFailed && (
-                      <span className="text-xs text-destructive">failed</span>
-                    )}
-                  </div>
-                  <div className="flex items-baseline gap-3 text-xs text-muted-foreground">
-                    {isRunning && <span className="text-rem">running</span>}
-                    {!isRunning && !isFailed && findingCount > 0 && (
-                      <>
-                        <span>{findingCount} findings</span>
-                        {critHigh > 0 && (
-                          <span className="text-destructive">{critHigh} crit/high</span>
-                        )}
-                      </>
-                    )}
-                    {!isRunning && !isFailed && findingCount === 0 && (
-                      <span>no findings</span>
-                    )}
-                    <span className="ml-auto tabular-nums">
-                      {new Date(scan.startedAt).toLocaleDateString()}
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {formatRelativeTime(scan.startedAt)}
                     </span>
+                  </div>
+                  {/* Line 2: status / findings + duration */}
+                  <div className="flex items-baseline justify-between text-xs text-muted-foreground">
+                    <div className="flex items-baseline gap-3">
+                      {isRunning && <span className="text-rem">running</span>}
+                      {isFailed && <span className="text-destructive">failed</span>}
+                      {!isRunning && !isFailed && findingCount > 0 && (
+                        <>
+                          <span>{findingCount} findings</span>
+                          {critHigh > 0 && (
+                            <span className="text-destructive">{critHigh} crit/high</span>
+                          )}
+                        </>
+                      )}
+                      {!isRunning && !isFailed && findingCount === 0 && (
+                        <span>clean</span>
+                      )}
+                    </div>
+                    {scan.finishedAt && (
+                      <span className="tabular-nums">
+                        {formatDuration(scan.startedAt, scan.finishedAt)}
+                      </span>
+                    )}
                   </div>
                   {scanReport && findingCount > 0 && (
                     <div className="mt-2">
