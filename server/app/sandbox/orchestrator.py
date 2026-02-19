@@ -1520,9 +1520,17 @@ async def _start_stagehand_browser(target_url: str):
         server="local",
         model_api_key="bedrock",  # placeholder — bedrock uses AWS credential chain, not API key
     )
+    chrome_path = os.environ.get("CHROME_PATH", "")
     session = await client.sessions.start(
         model_name="bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
-        browser={"type": "local"},
+        browser={
+            "type": "local",
+            "launch_options": {
+                "executable_path": chrome_path,
+                "headless": True,
+                "args": ["--no-sandbox", "--disable-setuid-sandbox"],
+            },
+        },
     )
 
     # Navigate to target via Stagehand
