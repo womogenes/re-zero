@@ -6,6 +6,9 @@ import { api } from "../../../../convex/_generated/api";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { useMemo, useState } from "react";
+import { LoadingState } from "@/components/loading-state";
+import { SectionHeader } from "@/components/form/section-header";
+import { GhostButton } from "@/components/form/ghost-button";
 
 const BILLING_URL = typeof window !== "undefined" ? `${window.location.origin}/billing` : "/billing";
 
@@ -60,7 +63,6 @@ function UsageGraph({ scans }: { scans: Array<{ tier?: string; status: string; s
             <span className="inline-block w-2 h-2 bg-rem" /> oni
           </span>
         </div>
-        {/* Hover legend — fixed position, updates on hover */}
         <span className="text-xs tabular-nums text-muted-foreground transition-opacity duration-100">
           {hover ? (
             <>{hover.date} &middot; {hover.maid} maid, {hover.oni} oni &middot; ${legendSpend}</>
@@ -87,11 +89,11 @@ function UsageGraph({ scans }: { scans: Array<{ tier?: string; status: string; s
             >
               {total > 0 ? (
                 <div className="w-full transition-opacity duration-150 group-hover:opacity-70">
-                  {oniH > 0 && (
-                    <div className="bg-rem w-full" style={{ height: oniH }} />
-                  )}
                   {maidH > 0 && (
                     <div className="bg-rem/40 w-full" style={{ height: maidH }} />
+                  )}
+                  {oniH > 0 && (
+                    <div className="bg-rem w-full" style={{ height: oniH }} />
                   )}
                 </div>
               ) : (
@@ -119,14 +121,7 @@ export default function BillingPage() {
   const minTime = useMinLoading();
 
   if (isLoading || !minTime) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
-        <div className="text-center">
-          <img src="/rem-running.gif" alt="Rem" className="w-16 h-16 mx-auto mb-3 object-contain" />
-          <p className="text-sm text-muted-foreground">Rem is loading billing...</p>
-        </div>
-      </div>
-    );
+    return <LoadingState message="rem is loading billing..." />;
   }
 
   const products = Array.isArray(customer?.products) ? customer.products : [];
@@ -144,10 +139,10 @@ export default function BillingPage() {
 
       {/* Subscription */}
       <section className="mb-12">
-        <p className="text-xs text-muted-foreground mb-4">PLAN</p>
+        <SectionHeader>PLAN</SectionHeader>
         {hasSubscription ? (
           <div className="border border-rem/30 bg-rem/5 p-4">
-            <p className="text-sm font-medium">Pay-as-you-go</p>
+            <p className="text-sm font-medium">pay-as-you-go</p>
             <div className="text-xs text-muted-foreground mt-3 space-y-1">
               <p>$25 / maid scan{maidFeature?.usage > 0 ? ` \u00b7 ${maidFeature.usage} used this period` : ""}</p>
               <p>$45 / oni scan{oniFeature?.usage > 0 ? ` \u00b7 ${oniFeature.usage} used this period` : ""}</p>
@@ -157,9 +152,9 @@ export default function BillingPage() {
         ) : (
           <div className="border border-border p-4">
             <p className="text-sm text-muted-foreground mb-3">
-              No active plan. Set up billing to start scanning.
+              no active plan. set up billing to start scanning.
             </p>
-            <button
+            <GhostButton
               onClick={() =>
                 checkout({
                   productId: "pay-as-you-go",
@@ -167,10 +162,10 @@ export default function BillingPage() {
                   dialog: CheckoutDialog,
                 })
               }
-              className="text-sm border border-rem/30 text-rem px-3 py-1 hover:bg-rem/5 transition-colors duration-100"
+              className="text-sm px-3 py-1"
             >
               set up billing
-            </button>
+            </GhostButton>
           </div>
         )}
       </section>
@@ -178,7 +173,7 @@ export default function BillingPage() {
       {/* Usage graph */}
       {hasSubscription && scans && (
         <section className="mb-12">
-          <p className="text-xs text-muted-foreground mb-4">USAGE</p>
+          <SectionHeader>USAGE</SectionHeader>
           <div className="border border-border p-4">
             <UsageGraph scans={scans} />
           </div>
@@ -188,14 +183,14 @@ export default function BillingPage() {
       {/* Scan packs */}
       {hasSubscription && (
         <section className="mb-12">
-          <p className="text-xs text-muted-foreground mb-4">SCAN PACKS</p>
+          <SectionHeader>SCAN PACKS</SectionHeader>
           {maidFeature?.balance > 0 && (
             <p className="text-sm mb-4">
               {maidFeature.balance} prepaid {maidFeature.balance === 1 ? "scan" : "scans"} remaining
             </p>
           )}
           <p className="text-xs text-muted-foreground mb-4">
-            Prepaid bundles at a discount. Draws from packs first,
+            prepaid bundles at a discount. draws from packs first,
             then pay-as-you-go.
           </p>
           <div className="flex gap-3">
@@ -236,7 +231,7 @@ export default function BillingPage() {
       {/* Manage */}
       {hasSubscription && (
         <section>
-          <p className="text-xs text-muted-foreground mb-4">MANAGE</p>
+          <SectionHeader>MANAGE</SectionHeader>
           <button
             onClick={() => openBillingPortal()}
             className="text-sm text-rem hover:underline"

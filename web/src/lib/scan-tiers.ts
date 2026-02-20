@@ -1,6 +1,6 @@
 export const TIER_CONFIG = {
   maid: {
-    label: "Maid",
+    label: "maid",
     price: 25,
     defaultModel: "claude-sonnet-4.6",
     models: {
@@ -9,7 +9,7 @@ export const TIER_CONFIG = {
     },
   },
   oni: {
-    label: "Oni",
+    label: "oni",
     price: 45,
     defaultModel: "claude-opus-4.6",
     models: {
@@ -27,11 +27,11 @@ export function getScanLabel(scan: {
   model?: string;
 }): string {
   const cfg = TIER_CONFIG[scan.tier as Tier];
-  if (!cfg) return "Rem";
+  if (!cfg) return "rem";
   const modelLabel = scan.model
     ? (cfg.models as Record<string, { label: string }>)[scan.model]?.label
     : null;
-  return `Rem (${cfg.label}${modelLabel ? ` \u00b7 ${modelLabel}` : ""})`;
+  return `rem (${cfg.label}${modelLabel ? ` \u00b7 ${modelLabel}` : ""})`;
 }
 
 export function getScanShort(scan: {

@@ -111,13 +111,13 @@ const MODES = [
     id: "oss",
     cmd: "oss",
     tagline: "every line, every path, every secret",
-    desc: "Full source tree analysis. Rem traces data flows through your codebase \u2014 injection points, auth bypasses, hardcoded credentials, dangerous crypto. Every file she deems relevant gets read and analyzed.",
+    desc: "full source tree analysis. rem traces data flows through your codebase \u2014 injection points, auth bypasses, hardcoded credentials, dangerous crypto. every file she deems relevant gets read and analyzed.",
   },
   {
     id: "web",
     cmd: "web",
     tagline: "your browser, her weapon",
-    desc: "Rem takes the wheel of a headless browser and attacks your web app like a human pentester. She navigates pages, fills forms, injects payloads, and discovers XSS, CSRF, SSRF, IDOR \u2014 the full OWASP top 10.",
+    desc: "rem takes the wheel of a headless browser and attacks your web app like a human pentester. she navigates pages, fills forms, injects payloads, and discovers XSS, CSRF, SSRF, IDOR \u2014 the full OWASP top 10.",
   },
 ];
 
@@ -281,7 +281,7 @@ export function LandingContent() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/rem-hero.gif"
-              alt="Rem"
+              alt="rem"
               className="w-full h-full object-cover"
             />
             {mounted && (
@@ -311,13 +311,13 @@ export function LandingContent() {
           </h1>
 
           <p className="hero-tagline text-base sm:text-lg text-muted-foreground mt-5 sm:mt-6 text-center max-w-md leading-relaxed opacity-0">
-            deploy Rem to red team any attack surface.
+            deploy rem to red team any attack surface.
           </p>
 
           <div className="hero-cta mt-8 sm:mt-10 flex flex-col items-center gap-3 opacity-0">
             <SignInButton mode="modal">
               <button className="text-sm bg-rem text-white px-8 py-3 hover:brightness-110 transition-all duration-150 active:translate-y-px">
-                deploy Rem
+                deploy rem
               </button>
             </SignInButton>
             <span className="text-xs text-muted-foreground">
@@ -480,7 +480,7 @@ export function LandingContent() {
           </span>
 
           <h2 className="text-4xl sm:text-6xl font-semibold tracking-tight text-center">
-            deploy <span className="text-rem">Rem</span>
+            deploy <span className="text-rem">rem</span>
           </h2>
 
           <SignInButton mode="modal">
@@ -490,9 +490,9 @@ export function LandingContent() {
           </SignInButton>
 
           <p className="text-sm text-muted-foreground text-center max-w-xs leading-relaxed mt-4">
-            Rem probes, fails, learns, returns.
+            rem probes, fails, learns, returns.
             <br />
-            Each scan is a life. Knowledge accumulates.
+            each scan is a life. knowledge accumulates.
           </p>
         </div>
 

@@ -7,6 +7,11 @@ import { useUser } from "@clerk/nextjs";
 import { useState } from "react";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { TIER_CONFIG, type Tier } from "@/lib/scan-tiers";
+import { LoadingState } from "@/components/loading-state";
+import { SectionHeader } from "@/components/form/section-header";
+import { GhostButton } from "@/components/form/ghost-button";
+import { TextInput } from "@/components/form/text-input";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 export default function SettingsPage() {
   const { user, isLoaded } = useCurrentUser();
@@ -25,16 +30,10 @@ export default function SettingsPage() {
   const [newKeyName, setNewKeyName] = useState("");
   const [copied, setCopied] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; name: string } | null>(null);
 
   if (!isLoaded || !minTime) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
-        <div className="text-center">
-          <img src="/rem-running.gif" alt="Rem" className="w-16 h-16 mx-auto mb-3 object-contain" />
-          <p className="text-sm text-muted-foreground">Rem is loading settings...</p>
-        </div>
-      </div>
-    );
+    return <LoadingState message="rem is loading settings..." />;
   }
 
   const handleCreate = async () => {
@@ -73,9 +72,9 @@ export default function SettingsPage() {
 
       {/* Default Scan Tier */}
       <section className="mb-12">
-        <p className="text-xs text-muted-foreground mb-4">DEFAULT SCAN MODE</p>
+        <SectionHeader>DEFAULT SCAN MODE</SectionHeader>
         <p className="text-sm text-muted-foreground mb-4">
-          New scans default to this tier. You can always override per-scan.
+          new scans default to this tier. you can always override per-scan.
         </p>
         <div className="flex gap-2">
           {(Object.keys(TIER_CONFIG) as Tier[]).map((t) => {
@@ -102,9 +101,9 @@ export default function SettingsPage() {
 
       {/* API Keys Section */}
       <section>
-        <p className="text-xs text-muted-foreground mb-4">API KEYS</p>
+        <SectionHeader>API KEYS</SectionHeader>
         <p className="text-sm text-muted-foreground mb-6">
-          Use API keys to authenticate the CLI.{" "}
+          use API keys to authenticate the CLI.{" "}
           <span className="text-foreground">npm install -g rem-scan</span>, then{" "}
           <span className="text-foreground">rem login</span>.
         </p>
@@ -113,18 +112,19 @@ export default function SettingsPage() {
         {newKeyValue && (
           <div className="border border-rem/30 bg-rem/5 p-4 mb-6">
             <p className="text-xs text-muted-foreground mb-2">
-              Save this key now — you won&apos;t see it again.
+              save this key now — you won&apos;t see it again.
             </p>
             <div className="flex items-center gap-2">
               <code className="text-sm font-mono flex-1 break-all">
                 {newKeyValue}
               </code>
-              <button
+              <GhostButton
+                variant="muted"
                 onClick={() => handleCopy(newKeyValue)}
-                className="text-xs border border-border px-2 py-1 hover:border-rem/30 transition-colors duration-100 shrink-0"
+                className="shrink-0 border-border px-2 py-1 hover:border-rem/30"
               >
                 {copied ? "copied" : "copy"}
-              </button>
+              </GhostButton>
             </div>
             <button
               onClick={() => setNewKeyValue(null)}
@@ -156,7 +156,7 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <button
-                  onClick={() => handleRevoke(k._id)}
+                  onClick={() => setRevokeTarget({ id: k._id, name: k.name })}
                   className="text-xs text-destructive/70 hover:text-destructive transition-colors duration-100"
                 >
                   revoke
@@ -167,39 +167,36 @@ export default function SettingsPage() {
         ) : (
           <div className="border border-border px-3 py-6 text-center mb-6">
             <p className="text-sm text-muted-foreground mb-3">
-              No API keys yet.
+              no API keys yet.
             </p>
-            <button
-              onClick={handleGetDefault}
-              className="text-sm border border-rem/30 text-rem px-3 py-1 hover:bg-rem/5 transition-colors duration-100"
-            >
+            <GhostButton onClick={handleGetDefault} className="text-sm px-3 py-1">
               generate default key
-            </button>
+            </GhostButton>
           </div>
         )}
 
         {/* Create new key */}
         <div className="flex items-center gap-2">
-          <input
-            type="text"
+          <TextInput
             placeholder="key name (optional)"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
-            className="text-sm border border-border bg-transparent px-2 py-1 flex-1 focus:border-rem focus:outline-none transition-colors duration-100 placeholder:text-muted-foreground/50"
+            className="flex-1"
+            inputSize="sm"
           />
-          <button
+          <GhostButton
             onClick={handleCreate}
             disabled={creating}
-            className="text-sm border border-rem/30 text-rem px-3 py-1 hover:bg-rem/5 transition-colors duration-100 disabled:opacity-50 shrink-0"
+            className="text-sm px-3 py-1 shrink-0"
           >
             {creating ? "creating..." : "create key"}
-          </button>
+          </GhostButton>
         </div>
 
         {/* Revoked keys */}
         {revokedKeys.length > 0 && (
           <div className="mt-8">
-            <p className="text-xs text-muted-foreground mb-2">REVOKED</p>
+            <SectionHeader>REVOKED</SectionHeader>
             <div className="border border-border divide-y divide-border opacity-50">
               {revokedKeys.map((k) => (
                 <div key={k._id} className="flex items-center gap-4 px-3 py-2">
@@ -213,6 +210,15 @@ export default function SettingsPage() {
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}
+        title="revoke API key"
+        description={`"${revokeTarget?.name ?? ""}" will stop working immediately. any CLI sessions using this key will fail.`}
+        confirmLabel="revoke"
+        onConfirm={() => { if (revokeTarget) { handleRevoke(revokeTarget.id); setRevokeTarget(null); } }}
+      />
     </div>
   );
 }

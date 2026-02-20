@@ -1045,6 +1045,42 @@ _WEB_TOOLS = {
         "Capture a screenshot of the current page as visual evidence.",
         'label: tool.schema.string().describe("Brief label for what this screenshot captures")',
     ),
+    # http_request doesn't go through the Playwright bridge — it makes direct HTTP calls
+    "http_request": '''
+import { tool } from "@opencode-ai/plugin"
+
+export default tool({
+  description: "Make an HTTP request from the server (not the browser). Bypasses CORS entirely — use this to probe APIs, backends, and endpoints directly. Think of it as curl.",
+  args: {
+    method: tool.schema.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]).describe("HTTP method"),
+    url: tool.schema.string().describe("Full URL to request"),
+    headers: tool.schema.record(tool.schema.string(), tool.schema.string()).optional().describe("Request headers"),
+    body: tool.schema.string().optional().describe("Request body (for POST/PUT/PATCH)"),
+  },
+  async execute(args) {
+    const opts: RequestInit = {
+      method: args.method,
+      headers: args.headers || undefined,
+      body: args.body || undefined,
+      redirect: "follow",
+    };
+    try {
+      const resp = await fetch(args.url, opts);
+      const text = await resp.text();
+      const hdrs: Record<string, string> = {};
+      resp.headers.forEach((v, k) => { hdrs[k] = v; });
+      return JSON.stringify({
+        status: resp.status,
+        headers: hdrs,
+        body: text.slice(0, 8000),
+        url: resp.url,
+      }, null, 2);
+    } catch (e: any) {
+      return `HTTP request failed: ${e.message || e}`;
+    }
+  },
+})
+''',
 }
 
 
@@ -1947,16 +1983,19 @@ Target: {target_url}
 {auth_info}
 {context_info}
 
-You have a headless browser with two layers:
+You have a headless browser with three layers:
 - **Stagehand (AI-powered)**: observe, act, extract, navigate — use natural language to interact with pages. observe() first to see what's there, then act() to click/fill. One action per act() call. For passwords, use variables parameter.
-- **Playwright (direct)**: execute_js, screenshot, get_page_content — for programmatic checks (cookies, headers, API fetching, XSS payloads, CORS). Use act() for UI interactions instead of JS clicks.
+- **Playwright (direct)**: execute_js, screenshot, get_page_content — for DOM inspection, cookies, XSS payloads. Use act() for UI interactions instead of JS clicks.
+- **Server-side HTTP**: http_request — makes requests from the server, bypasses CORS entirely. Use this to probe APIs and backends directly instead of fetch() in execute_js (which will be blocked by CORS).
 - **ask_human**: for 2FA codes, CAPTCHAs, email verification only.
 
 Think like an attacker, not an auditor. Focus on things that let someone actually compromise the app:
-- Exposed backend APIs (Convex, Supabase, Firebase, GraphQL) — can you call mutations without auth? Read other users' data?
+- Exposed backend APIs (Convex, Supabase, Firebase, GraphQL) — discover the backend URL in JS bundles, then use http_request to probe it directly. Can you call mutations without auth? Read other users' data?
 - Auth/authz flaws — admin routes, IDOR, API endpoints without permission checks
 - Real injection — XSS that actually lands, not just "missing CSP header"
 - Business logic issues — replay attacks, price manipulation, out-of-order operations
+
+**Read-only testing.** Never perform destructive mutations — no DELETE requests, no data modification. Prove access control gaps exist without actually exploiting them. Use fake/test payloads or just confirm the endpoint responds (200 vs 401).
 
 Don't pad the report with missing headers, publishable API keys, or missing security.txt. Quality over quantity.
 
@@ -2248,9 +2287,11 @@ You have a headless Chromium browser controlled through two layers:
 
 For passwords and secrets, use the variables parameter so the value isn't sent to the element-finding model: act(instruction="fill password with %pass%", variables={{"pass": "actualpassword"}})
 
-**Playwright (direct)** — execute_js, screenshot, get_page_content. These bypass the AI layer and talk directly to the browser. Use execute_js for programmatic checks: reading cookies, fetching API endpoints, checking headers, testing CORS, running XSS payloads in the DOM. Use get_page_content for structural analysis of forms, links, and metadata.
+**Playwright (direct)** — execute_js, screenshot, get_page_content. These bypass the AI layer and talk directly to the browser. Use execute_js for DOM inspection, reading cookies, running XSS payloads, and checking things within the page. Use get_page_content for structural analysis of forms, links, and metadata.
 
-The Stagehand tools are for interacting with the UI (clicking, typing, navigating). Playwright tools are for inspecting and probing the application programmatically. Use whichever is appropriate.
+**Server-side HTTP** — http_request. This makes HTTP requests from the server, completely bypassing the browser. No CORS restrictions, no same-origin policy. Use this for probing APIs and backends directly — Convex endpoints, REST APIs, GraphQL, anything where you need to send arbitrary requests without browser security getting in the way. Think of it as curl. If you find an API endpoint in the page source or JS bundles, use http_request to probe it directly rather than trying fetch() inside execute_js (which will be blocked by CORS).
+
+The Stagehand tools are for interacting with the UI (clicking, typing, navigating). Playwright tools are for inspecting the page from within the browser. http_request is for probing backends and APIs directly. Use whichever is appropriate.
 
 **ask_human** — The operator is watching live and can provide things you can't get yourself: 2FA codes, email verification links, CAPTCHA solutions. Be specific about what you need. Try a couple approaches before asking.
 
@@ -2259,10 +2300,12 @@ The Stagehand tools are for interacting with the UI (clicking, typing, navigatin
 Think like an attacker, not an auditor. The goal is to find things that would let someone actually compromise the application — steal data, escalate privileges, impersonate users, or break things.
 
 **High-value targets (spend most of your time here):**
-- Exposed backend APIs. Modern apps often use Convex, Supabase, Firebase, or GraphQL backends. These frequently have overly permissive endpoints. Try to discover the backend by looking at network requests (check JS bundles, __NEXT_DATA__, inline scripts) and then probe it directly. Can you call mutations without auth? Can you read other users' data? Can you enumerate users?
+- Exposed backend APIs. Modern apps often use Convex, Supabase, Firebase, or GraphQL backends. These frequently have overly permissive endpoints. Discover the backend by looking at JS bundles, __NEXT_DATA__, inline scripts, and then use http_request to probe it directly (not execute_js — fetch() in the browser will be blocked by CORS). Can you call mutations without auth? Can you read other users' data? Can you enumerate users?
 - Authentication and authorization flaws. Can you access admin routes? Can you modify your user ID in API calls to access other accounts? Are there API endpoints that don't check auth at all?
 - Injection that actually lands. Don't just try `<script>alert(1)</script>` in a search box and move on. Check if inputs are reflected anywhere, if the app uses dangerouslySetInnerHTML, if URL parameters are injected into the page. Try polyglot payloads. Check stored XSS in forms that save data.
 - Business logic issues. Can you do things out of order? Can you replay requests? Can you manipulate prices, quantities, or access levels through the API?
+
+**IMPORTANT: Read-only testing.** Never perform destructive mutations on the target — no DELETE requests, no data modification, no dropping records. You're testing whether the endpoint *accepts* the request, not actually destroying data. For write operations, either use a clearly fake/test payload that won't affect real data, or just confirm the endpoint responds (e.g., check if a POST returns 200 vs 401) without actually completing the operation. The point is proving the access control gap exists, not exploiting it.
 
 **Lower-value (check but don't dwell):**
 - Security headers, cookie flags, CORS policy. Worth a quick check but these are rarely the difference between secure and compromised. Note them if they're genuinely misconfigured but don't pad your report with "missing Referrer-Policy" or "missing Permissions-Policy" — these are hygiene items, not vulnerabilities.
@@ -2370,6 +2413,24 @@ When you call submit_findings, each finding should be its own entry. The summary
                     "script": {"type": "string", "description": "JavaScript to execute. Use 'return' to get values back."},
                 },
                 "required": ["script"],
+            },
+        },
+        {
+            "name": "http_request",
+            "description": "Make an HTTP request from the server (not the browser). Bypasses CORS entirely — use this to probe APIs, backends, and endpoints directly. Returns status, headers, and body. Think of it as curl.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"], "description": "HTTP method"},
+                    "url": {"type": "string", "description": "Full URL to request"},
+                    "headers": {
+                        "type": "object",
+                        "description": "Request headers as key-value pairs",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "body": {"type": "string", "description": "Request body (for POST/PUT/PATCH). Send JSON as a string."},
+                },
+                "required": ["method", "url"],
             },
         },
         {
@@ -2767,6 +2828,48 @@ When you call submit_findings, each finding should be its own entry. The summary
                 await _push_action(convex_url, deploy_key, scan_id, "tool_result", {
                     "tool": "execute_js",
                     "summary": f"JS returned {len(str(result_text)):,} chars",
+                    "content": result_text[:10000],
+                })
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use.id,
+                    "content": result_text[:10000],
+                })
+
+            elif tool_use.name == "http_request":
+                method = tool_use.input.get("method", "GET").upper()
+                url = tool_use.input["url"]
+                headers = tool_use.input.get("headers", {})
+                body = tool_use.input.get("body")
+                await _push_action(convex_url, deploy_key, scan_id, "tool_call", {
+                    "tool": "http_request",
+                    "summary": f"{method} {url[:100]}",
+                    "input": {"method": method, "url": url},
+                })
+
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as http:
+                        resp = await http.request(
+                            method=method,
+                            url=url,
+                            headers=headers or None,
+                            content=body.encode() if body else None,
+                        )
+                        resp_headers = dict(resp.headers)
+                        resp_body = resp.text[:8000]
+                        result_text = json.dumps({
+                            "status": resp.status_code,
+                            "headers": resp_headers,
+                            "body": resp_body,
+                            "url": str(resp.url),
+                        }, indent=2, default=str)
+                except Exception as e:
+                    result_text = f"HTTP request failed: {type(e).__name__}: {e}"
+
+                await _push_action(convex_url, deploy_key, scan_id, "tool_result", {
+                    "tool": "http_request",
+                    "summary": f"{method} {url[:60]} → {result_text[:80]}",
                     "content": result_text[:10000],
                 })
                 tool_results.append({

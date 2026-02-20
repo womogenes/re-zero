@@ -17,7 +17,7 @@ export function RemSpinner() {
   );
 }
 
-export function RemLoader({ text = "Loading" }: { text?: string }) {
+export function RemLoader({ text = "loading" }: { text?: string }) {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <RemSpinner />

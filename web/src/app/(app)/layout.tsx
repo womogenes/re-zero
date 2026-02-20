@@ -2,11 +2,13 @@ import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { SyncUser } from "@/components/sync-user";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CommandPalette } from "@/components/command-palette";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col">
       <SyncUser />
+      <CommandPalette />
       <header className="border-b border-border px-8 h-11 flex items-center justify-between shrink-0 mt-[2px]">
         <div className="flex items-center gap-8 text-sm">
           <Link href="/dashboard" className="tracking-tight hover:opacity-70 transition-opacity duration-150">
@@ -22,6 +24,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Link href="/settings" className="text-xs text-muted-foreground hover:text-rem transition-colors duration-150">
             settings
           </Link>
+          <kbd className="hidden sm:inline-flex text-[10px] text-muted-foreground/30 border border-border/50 px-1.5 py-0.5 tabular-nums select-none">
+            &#8984;K
+          </kbd>
           <ThemeToggle />
           <UserButton appearance={{ elements: { avatarBox: "h-5 w-5" } }} />
         </div>
